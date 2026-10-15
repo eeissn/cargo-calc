@@ -149,6 +149,7 @@
   td input[type="number"] { width: 68px; padding: 6px 8px; font-size: 15px; border-radius: 10px; }
   .del { margin: 0; width: 28px; height: 28px; padding: 0; line-height: 1; font-size: 17px; color: var(--muted); }
   .del:hover { color: var(--danger); }
+  .miss { color: var(--danger); font-size: 12px; margin-top: 2px; }
   .empty { color: var(--muted); font-size: 15px; padding: 4px 0; }
   .total { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 15px; color: var(--muted); }
   .total b { color: var(--ink); font-weight: 600; }
@@ -162,7 +163,7 @@
 
 <nav class="nav">
   <b>Раскладка груза</b>
-  <span>Шаг 2</span>
+  <span>Шаг 3</span>
 </nav>
 
 <header class="hero">
@@ -277,6 +278,25 @@
       fill: "none", stroke: "var(--muted)", "stroke-width": 1.5
     }));
 
+    // груз
+    lastLayout.placed.forEach(function (u) {
+      var c = u.c, hue = (c.id * 47) % 360;
+      var rx = x0 + u.x * scale, ry = y0 + u.y * scale, rw = c.l * scale, rh = c.w * scale;
+      svg.appendChild(el("rect", {
+        x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 4,
+        fill: "hsl(" + hue + " 60% 48%)", stroke: "hsl(" + hue + " 60% 32%)", "stroke-width": 1.5
+      }));
+      if (rw > 44 && rh > 18) {
+        var maxCh = Math.max(Math.floor((rw - 8) / 7), 1);
+        var label = c.name.length > maxCh ? c.name.slice(0, Math.max(maxCh - 1, 1)) + "…" : c.name;
+        var t = el("text", { x: rx + rw / 2, y: ry + rh / 2 + (rh > 36 ? -2 : 4), "text-anchor": "middle", style: "fill:#fff;font-size:12px;font-weight:600;pointer-events:none" }, label);
+        svg.appendChild(t);
+        if (rh > 36 && rw > 70) {
+          svg.appendChild(el("text", { x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle", style: "fill:#fff;fill-opacity:.85;font-size:11px;pointer-events:none" }, c.l + "×" + c.w));
+        }
+      }
+    });
+
     // метка двери (задняя сторона справа)
     svg.appendChild(el("line", {
       x1: x0 + pw, y1: y0 + 6, x2: x0 + pw, y2: y0 + ph - 6,
@@ -304,11 +324,32 @@
     svg.appendChild(t);
   }
 
+  var lastLayout = { placed: [], miss: {} };
+
+  // простая автораскладка по колонкам: от кабины к дверям, поперек кузова
+  function layout(d) {
+    var placed = [], miss = {}, x = 0, y = 0, colL = 0;
+    cargo.forEach(function (c) {
+      miss[c.id] = 0;
+      for (var i = 0; i < c.q; i++) {
+        if (c.h > d.h || c.l > d.l || c.w > d.w) { miss[c.id]++; continue; }
+        if (y + c.w > d.w) { x += colL; y = 0; colL = 0; }
+        if (x + c.l > d.l) { miss[c.id]++; continue; }
+        placed.push({ c: c, x: x, y: y });
+        y += c.w;
+        colL = Math.max(colL, c.l);
+      }
+    });
+    return { placed: placed, miss: miss };
+  }
+
   function update() {
     var d = read();
+    lastLayout = layout(d);
     $("vol").textContent = (d.l * d.w * d.h / 1e6).toFixed(1);
     $("area").textContent = (d.l * d.w / 1e4).toFixed(1);
     drawTop(d);
+    renderCargo();
   }
 
   ["len", "wid", "hei"].forEach(function (id) {
@@ -347,7 +388,7 @@
       var vol = c.l * c.w * c.h * c.q / 1e6;
       totalVol += vol; totalQty += c.q;
       html += '<tr>' +
-        '<td>' + esc(c.name) + '</td>' +
+        '<td>' + esc(c.name) + (lastLayout.miss[c.id] ? '<div class="miss">не поместилось: ' + lastLayout.miss[c.id] + '</div>' : '') + '</td>' +
         '<td>' + c.l + '×' + c.w + '×' + c.h + '</td>' +
         '<td><input type="number" min="1" step="1" value="' + c.q + '" data-id="' + c.id + '" aria-label="Количество"></td>' +
         '<td>' + vol.toFixed(2) + '</td>' +
@@ -359,7 +400,10 @@
 
     var d = read();
     var bodyVol = d.l * d.w * d.h / 1e6;
-    $("total").innerHTML = 'Всего мест: <b>' + totalQty + '</b><br>' +
+    var floor = 0;
+    lastLayout.placed.forEach(function (u) { floor += u.c.l * u.c.w; });
+    $("total").innerHTML = 'В кузове: <b>' + lastLayout.placed.length + '</b> из ' + totalQty + ' мест<br>' +
+      'Занято пола: <b>' + (floor / (d.l * d.w) * 100).toFixed(0) + '%</b><br>' +
       'Объем груза: <b>' + totalVol.toFixed(2) + '</b> м³ из ' + bodyVol.toFixed(1) + ' м³ (' +
       (totalVol / bodyVol * 100).toFixed(0) + '%)';
   }
@@ -373,7 +417,7 @@
     var name = $("c-name").value.trim() || ("Груз " + nextId);
     cargo.push({ id: nextId++, name: name, l: l, w: w, h: h, q: q });
     $("c-name").value = "";
-    renderCargo();
+    update();
   });
 
   $("tbl").addEventListener("input", function (e) {
@@ -382,7 +426,7 @@
     var v = Math.round(+e.target.value);
     if (!(v >= 1)) return;
     cargo.forEach(function (c) { if (c.id === +id) c.q = v; });
-    renderCargo();
+    update();
     var again = document.querySelector('input[data-id="' + id + '"]');
     if (again) { again.focus(); again.setSelectionRange && again.type !== "number" && again.setSelectionRange(99, 99); }
   });
@@ -391,18 +435,10 @@
     var id = e.target.getAttribute("data-del");
     if (!id) return;
     cargo = cargo.filter(function (c) { return c.id !== +id; });
-    renderCargo();
-  });
-
-  ["len", "wid", "hei"].forEach(function (id) {
-    $(id).addEventListener("input", renderCargo);
-  });
-  document.querySelectorAll("button[data-l]").forEach(function (b) {
-    b.addEventListener("click", renderCargo);
+    update();
   });
 
   update();
-  renderCargo();
 })();
 </script>
 </body>
