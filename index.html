@@ -180,7 +180,7 @@
 
 <nav class="nav">
   <b>Раскладка груза</b>
-  <span>Шаг 7</span>
+  <span>Шаг 8</span>
 </nav>
 
 <header class="hero">
@@ -296,6 +296,14 @@
       h: Math.max(1, +$("hei").value || 0)
     };
   }
+  function overlapArea(a, b) {
+    var da = dimsOf(a), db = dimsOf(b);
+    var w = Math.min(a.x + da.l, b.x + db.l) - Math.max(a.x, b.x);
+    var h = Math.min(a.y + da.w, b.y + db.w) - Math.max(a.y, b.y);
+    return (w > 0 && h > 0) ? w * h : 0;
+  }
+  function topOf(u) { return (u.z || 0) + cargoById(u.cid).h; }
+
   function selectedUnit() {
     for (var i = 0; i < units.length; i++) {
       if (units[i].uid === selectedUid && units[i].placed) return units[i];
@@ -341,7 +349,7 @@
     units.forEach(function (u) {
       if (!u.placed) return;
       var c = cargoById(u.cid), dm = dimsOf(u);
-      if (c.h > d.h || dm.l > d.l || dm.w > d.w) { u.placed = false; u.out = false; return; }
+      if (c.h > d.h || dm.l > d.l || dm.w > d.w || (u.z || 0) + c.h > d.h) { u.placed = false; u.out = false; u.z = 0; return; }
       u.x = clamp(u.x, 0, d.l - dm.l);
       u.y = clamp(u.y, 0, d.w - dm.w);
     });
@@ -353,7 +361,8 @@
       for (var j = i + 1; j < pl.length; j++) {
         var a = pl[i], b = pl[j], da = dimsOf(a), db = dimsOf(b);
         if (a.x < b.x + db.l - 0.01 && b.x < a.x + da.l - 0.01 &&
-            a.y < b.y + db.w - 0.01 && b.y < a.y + da.w - 0.01) {
+            a.y < b.y + db.w - 0.01 && b.y < a.y + da.w - 0.01 &&
+            (a.z || 0) < topOf(b) - 0.01 && (b.z || 0) < topOf(a) - 0.01) {
           set[a.uid] = true; set[b.uid] = true;
         }
       }
@@ -401,7 +410,7 @@
 
     // груз
     var over = findOverlaps();
-    units.forEach(function (u) {
+    units.slice().sort(function (a, b) { return (a.z || 0) - (b.z || 0); }).forEach(function (u) {
       if (!u.placed) return;
       var c = cargoById(u.cid), dm = dimsOf(u), hue = hueOf(c);
       var rx = x0 + u.x * scale, ry = y0 + u.y * scale, rw = dm.l * scale, rh = dm.w * scale;
@@ -409,7 +418,7 @@
       var g = el("g", { "data-uid": u.uid, "class": "unit", opacity: u.out ? 0.5 : 1 });
       g.appendChild(el("rect", {
         x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 4,
-        fill: "hsl(" + hue + " 60% 48%)",
+        fill: "hsl(" + hue + " 60% " + ((u.z || 0) > 0 ? 58 : 48) + "%)",
         stroke: bad ? "var(--danger)" : (sel ? "var(--accent)" : "hsl(" + hue + " 60% 32%)"),
         "stroke-width": (bad || sel) ? 3 : 1.5
       }));
@@ -510,7 +519,7 @@
 
     // дальние места рисуем первыми, ближние поверх
     var list = units.filter(function (u) { return u.placed && !u.out; });
-    list.sort(function (a, b) { return flip ? b.y - a.y : a.y - b.y; });
+    list.sort(function (a, b) { return (flip ? b.y - a.y : a.y - b.y) || ((a.z || 0) - (b.z || 0)); });
     list.forEach(function (u) {
       var c = cargoById(u.cid), dm = dimsOf(u), hue = hueOf(c), sel = u.uid === selectedUid;
       var ux = flip ? d.l - u.x - dm.l : u.x;
@@ -571,7 +580,7 @@
       $("total").innerHTML = "";
       return;
     }
-    var html = '<p class="hint">Тяни цветной квадрат в кузов. Груз притягивается к стенкам и к другому грузу. Клик по грузу выбирает его, кнопка R поворачивает. Чтобы убрать груз из кузова, вынеси его за пределы.</p>' +
+    var html = '<p class="hint">Тяни цветной квадрат в кузов. Груз притягивается к стенкам и к другому грузу. Клик по грузу выбирает его, кнопка R поворачивает. Груз можно ставить на груз: брось его на другой так, чтобы он опирался хотя бы наполовину. Чтобы убрать груз из кузова, вынеси его за пределы.</p>' +
       '<table><thead><tr><th></th><th>Груз</th><th>Д×Ш×В</th><th>Шт</th><th></th></tr></thead><tbody>';
     var totalQty = 0;
     cargo.forEach(function (c) {
@@ -613,6 +622,7 @@
     $("area").textContent = (d.l * d.w / 1e4).toFixed(1);
     syncUnits();
     if (!noFit) fitUnits(d);
+    settle();
     if (selectedUid !== null && !selectedUnit()) selectedUid = null;
     $("rot").disabled = !selectedUnit();
     drawTop(d);
@@ -683,7 +693,8 @@
         if (o === u || !o.placed || o.out) continue;
         var od = dimsOf(o);
         if (u.x < o.x + od.l - 0.01 && o.x < u.x + dm.l - 0.01 &&
-            u.y < o.y + od.w - 0.01 && o.y < u.y + dm.w - 0.01) { hit = o; break; }
+            u.y < o.y + od.w - 0.01 && o.y < u.y + dm.w - 0.01 &&
+            (u.z || 0) < topOf(o) - 0.01 && (o.z || 0) < topOf(u) - 0.01) { hit = o; break; }
       }
       if (!hit) return;
       var hd = dimsOf(hit);
@@ -698,6 +709,51 @@
       if (!opts.length) return;
       u.x = opts[0].x; u.y = opts[0].y;
     }
+  }
+
+  // на какой высоте встанет груз: на пол или сверху на другой груз
+  function placeZ(u, d) {
+    var c = cargoById(u.cid), dm = dimsOf(u), below = [], z = 0;
+    for (var i = 0; i < units.length; i++) {
+      var o = units[i];
+      if (o === u || !o.placed || o.out) continue;
+      if (overlapArea(u, o) > 0.5) below.push(o);
+    }
+    if (!below.length) return { z: 0, ok: true };
+    below.forEach(function (b) { z = Math.max(z, topOf(b)); });
+    var sup = 0;
+    below.forEach(function (b) { if (Math.abs(topOf(b) - z) < 0.5) sup += overlapArea(u, b); });
+    if (z + c.h > d.h) return { z: 0, ok: false, reason: "height" };
+    if (sup < 0.5 * dm.l * dm.w) return { z: 0, ok: false, reason: "support" };
+    return { z: z, ok: true };
+  }
+
+  // груз отпустили: ставим сверху, если можно, иначе сдвигаем в сторону
+  function finalize(u, d) {
+    var r = placeZ(u, d);
+    if (r.ok) { u.z = r.z; return; }
+    flash(r.reason === "height"
+      ? "Сверху не хватает высоты, груз лег рядом"
+      : "Опора меньше половины груза, поэтому он лег рядом");
+    u.z = 0;
+    resolve(u, d);
+    var r2 = placeZ(u, d);
+    u.z = r2.ok ? r2.z : 0;
+  }
+
+  // сила тяжести: если из-под груза убрали опору, он опускается
+  function settle() {
+    var pl = units.filter(function (u) { return u.placed && !u.out; })
+      .sort(function (a, b) { return (a.z || 0) - (b.z || 0) || a.uid - b.uid; });
+    var z0 = {};
+    pl.forEach(function (u) { z0[u.uid] = u.z || 0; });
+    pl.forEach(function (u) {
+      var z = 0;
+      pl.forEach(function (o) {
+        if (o !== u && z0[o.uid] < z0[u.uid] - 0.01 && overlapArea(u, o) > 0.5) z = Math.max(z, topOf(o));
+      });
+      u.z = z;
+    });
   }
 
   // позиция для груза, брошенного из таблицы: центр под курсором, затем притяжение
@@ -770,6 +826,7 @@
       drag.guides = null;
     }
     drag.u.x = Math.round(nx); drag.u.y = Math.round(ny);
+    if (drag.u.out) { drag.u.z = 0; } else { var r = placeZ(drag.u, d); drag.u.z = r.ok ? r.z : 0; }
     drawTop(d);
   });
 
@@ -787,13 +844,13 @@
           var np = newPos(p, c, d);
           u.placed = true; u.out = false; u.rot = np.rot; u.x = np.x; u.y = np.y;
           units.splice(units.indexOf(u), 1); units.push(u);
-          resolve(u, d);
+          finalize(u, d);
         }
       }
       document.body.removeChild(drag.ghost);
     } else {
       drag.u.out = false;
-      if (!inside) drag.u.placed = false; else resolve(drag.u, d);
+      if (!inside) { drag.u.placed = false; drag.u.z = 0; } else { finalize(drag.u, d); }
     }
     document.body.classList.remove("dragging");
     drag = null;
@@ -863,7 +920,7 @@
   // простая автораскладка: колонками от кабины к дверям
   $("auto").addEventListener("click", function () {
     var d = read(), x = 0, y = 0, colL = 0;
-    units.forEach(function (u) { u.placed = false; u.out = false; });
+    units.forEach(function (u) { u.placed = false; u.out = false; u.z = 0; });
     units.slice().sort(function (a, b) { return a.uid - b.uid; }).forEach(function (u) {
       var c = cargoById(u.cid);
       u.rot = !(c.l <= d.l && c.w <= d.w);
@@ -878,7 +935,7 @@
   });
 
   $("clear").addEventListener("click", function () {
-    units.forEach(function (u) { u.placed = false; u.out = false; });
+    units.forEach(function (u) { u.placed = false; u.out = false; u.z = 0; });
     update(false);
   });
 
@@ -899,7 +956,7 @@
     // поворот вокруг центра
     u.x = Math.round(clamp(u.x + (old.l - nd.l) / 2, 0, d.l - nd.l));
     u.y = Math.round(clamp(u.y + (old.w - nd.w) / 2, 0, d.w - nd.w));
-    resolve(u, d);
+    finalize(u, d);
     update(false);
   }
 
