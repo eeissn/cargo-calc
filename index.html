@@ -155,6 +155,23 @@
   .total b { color: var(--ink); font-weight: 600; }
 
   .view-title { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 8px; }
+  .chip { display: block; width: 24px; height: 24px; border-radius: 7px; cursor: grab; touch-action: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+  .chip.off { opacity: .3; cursor: not-allowed; }
+  .sub { font-size: 12px; color: var(--muted); }
+  .hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+  .actions { margin-top: 16px; }
+  .ghost { position: fixed; z-index: 50; pointer-events: none; border-radius: 4px; opacity: .85; border: 2px solid rgba(255,255,255,.85); box-shadow: 0 8px 24px rgba(0,0,0,.28); }
+  .ghost.in { opacity: 0; }
+  body.dragging, body.dragging * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
+  #top { overflow: visible; }
+  svg .unit { cursor: grab; touch-action: none; }
+  .viewbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .viewbar .view-title { margin: 0; margin-right: auto; }
+  .viewbar button { margin: 0; }
+  .rot-msg { font-size: 13px; color: var(--danger); }
+  button:disabled { opacity: .4; cursor: default; }
+  button:disabled:hover { background: var(--fill); }
+  button:disabled:active { transform: none; }
   svg { width: 100%; height: auto; display: block; }
   svg text { fill: var(--muted); font-family: inherit; font-size: 13px; }
 </style>
@@ -163,7 +180,7 @@
 
 <nav class="nav">
   <b>Раскладка груза</b>
-  <span>Шаг 3</span>
+  <span>Шаг 7</span>
 </nav>
 
 <header class="hero">
@@ -215,15 +232,35 @@
   </section>
   </div>
 
+  <div class="col">
   <section>
-    <p class="view-title">Вид сверху</p>
+    <div class="viewbar">
+      <p class="view-title">Вид сверху</p>
+      <span class="rot-msg" id="rot-msg" role="status"></span>
+      <button type="button" id="rot" disabled>Повернуть (R)</button>
+    </div>
     <svg id="top" viewBox="0 0 900 300" role="img" aria-label="Кузов, вид сверху"></svg>
   </section>
+
+  <section>
+    <p class="view-title">Вид сбоку: левый борт</p>
+    <svg id="side-l" viewBox="0 0 900 300" role="img" aria-label="Кузов, левый борт"></svg>
+  </section>
+
+  <section>
+    <p class="view-title">Вид сбоку: правый борт</p>
+    <svg id="side-r" viewBox="0 0 900 300" role="img" aria-label="Кузов, правый борт"></svg>
+  </section>
+  </div>
 
   <section>
     <h2>Груз</h2>
     <div class="tbl-wrap" id="tbl"></div>
     <div class="total" id="total"></div>
+    <div class="actions">
+      <button type="button" id="auto">Разложить автоматически</button>
+      <button type="button" id="clear">Убрать все из кузова</button>
+    </div>
   </section>
 </main>
 
@@ -232,6 +269,14 @@
   var $ = function (id) { return document.getElementById(id); };
   var svg = $("top");
   var NS = "http://www.w3.org/2000/svg";
+  var VB_W = 900;
+
+  var cargo = [];          // типы груза: {id, name, l, w, h, q}
+  var units = [];          // отдельные места: {uid, cid, x, y, placed, out}
+  var nextCid = 1, nextUid = 1;
+  var geom = { x0: 50, y0: 40, scale: 1 };
+  var drag = null;
+  var selectedUid = null;
 
   function el(name, attrs, text) {
     var e = document.createElementNS(NS, name);
@@ -239,7 +284,11 @@
     if (text !== undefined) e.textContent = text;
     return e;
   }
-
+  function esc(t) {
+    return String(t).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
   function read() {
     return {
       l: Math.max(1, +$("len").value || 0),
@@ -247,22 +296,85 @@
       h: Math.max(1, +$("hei").value || 0)
     };
   }
+  function selectedUnit() {
+    for (var i = 0; i < units.length; i++) {
+      if (units[i].uid === selectedUid && units[i].placed) return units[i];
+    }
+    return null;
+  }
+  function cargoById(id) {
+    for (var i = 0; i < cargo.length; i++) if (cargo[i].id === id) return cargo[i];
+    return null;
+  }
+  function hueOf(c) { return (c.id * 47) % 360; }
+  function fits(c, d) {
+    return c.h <= d.h && ((c.l <= d.l && c.w <= d.w) || (c.w <= d.l && c.l <= d.w));
+  }
+  // размер места на виде сверху с учетом поворота (поворот добавим на следующем шаге)
+  function dimsOf(u) {
+    var c = cargoById(u.cid);
+    return u.rot ? { l: c.w, w: c.l } : { l: c.l, w: c.w };
+  }
+  function clamp(v, a, b) { return Math.min(Math.max(v, a), b); }
 
+  // ---------- места ----------
+  function syncUnits() {
+    units = units.filter(function (u) { return cargoById(u.cid); });
+    cargo.forEach(function (c) {
+      var mine = units.filter(function (u) { return u.cid === c.id; });
+      while (mine.length < c.q) {
+        var u = { uid: nextUid++, cid: c.id, x: 0, y: 0, placed: false, out: false, rot: false, z: 0 };
+        units.push(u); mine.push(u);
+      }
+      while (mine.length > c.q) {
+        var idx = -1;
+        for (var i = mine.length - 1; i >= 0; i--) { if (!mine[i].placed) { idx = i; break; } }
+        if (idx < 0) idx = mine.length - 1;
+        var rm = mine.splice(idx, 1)[0];
+        units.splice(units.indexOf(rm), 1);
+      }
+    });
+  }
+
+  // вернуть в кузов то, что вылезло после смены размеров
+  function fitUnits(d) {
+    units.forEach(function (u) {
+      if (!u.placed) return;
+      var c = cargoById(u.cid), dm = dimsOf(u);
+      if (c.h > d.h || dm.l > d.l || dm.w > d.w) { u.placed = false; u.out = false; return; }
+      u.x = clamp(u.x, 0, d.l - dm.l);
+      u.y = clamp(u.y, 0, d.w - dm.w);
+    });
+  }
+
+  function findOverlaps() {
+    var set = {}, pl = units.filter(function (u) { return u.placed && !u.out; });
+    for (var i = 0; i < pl.length; i++) {
+      for (var j = i + 1; j < pl.length; j++) {
+        var a = pl[i], b = pl[j], da = dimsOf(a), db = dimsOf(b);
+        if (a.x < b.x + db.l - 0.01 && b.x < a.x + da.l - 0.01 &&
+            a.y < b.y + db.w - 0.01 && b.y < a.y + da.w - 0.01) {
+          set[a.uid] = true; set[b.uid] = true;
+        }
+      }
+    }
+    return set;
+  }
+
+  // ---------- рисование ----------
   function drawTop(d) {
-    // рамка под подписи размеров
     var padL = 50, padR = 20, padT = 40, padB = 50;
-    var maxW = 900 - padL - padR;
+    var maxW = VB_W - padL - padR;
     var maxH = 420;
     var scale = Math.min(maxW / d.l, maxH / d.w);
     var pw = d.l * scale, ph = d.w * scale;
-    var vbW = 900, vbH = padT + ph + padB;
+    var vbH = padT + ph + padB;
+    var x0 = padL, y0 = padT;
+    geom = { x0: x0, y0: y0, scale: scale };
 
-    svg.setAttribute("viewBox", "0 0 " + vbW + " " + vbH);
+    svg.setAttribute("viewBox", "0 0 " + VB_W + " " + vbH);
     while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-    var x0 = padL, y0 = padT;
-
-    // сетка каждые 100 см
     var grid = el("g", { stroke: "var(--grid)", "stroke-width": 1 });
     for (var gx = 100; gx < d.l; gx += 100) {
       grid.appendChild(el("line", { x1: x0 + gx * scale, y1: y0, x2: x0 + gx * scale, y2: y0 + ph }));
@@ -278,26 +390,71 @@
       fill: "none", stroke: "var(--muted)", "stroke-width": 1.5
     }));
 
+    // подсказка в пустом кузове
+    var anyPlaced = units.some(function (u) { return u.placed; });
+    if (!anyPlaced) {
+      svg.appendChild(el("text", {
+        x: x0 + pw / 2, y: y0 + ph / 2 + 5, "text-anchor": "middle",
+        style: "font-size:17px"
+      }, cargo.length ? "Перетащи груз из таблицы сюда" : "Добавь груз в форме слева"));
+    }
+
     // груз
-    lastLayout.placed.forEach(function (u) {
-      var c = u.c, hue = (c.id * 47) % 360;
-      var rx = x0 + u.x * scale, ry = y0 + u.y * scale, rw = c.l * scale, rh = c.w * scale;
-      svg.appendChild(el("rect", {
+    var over = findOverlaps();
+    units.forEach(function (u) {
+      if (!u.placed) return;
+      var c = cargoById(u.cid), dm = dimsOf(u), hue = hueOf(c);
+      var rx = x0 + u.x * scale, ry = y0 + u.y * scale, rw = dm.l * scale, rh = dm.w * scale;
+      var bad = !!over[u.uid], sel = u.uid === selectedUid;
+      var g = el("g", { "data-uid": u.uid, "class": "unit", opacity: u.out ? 0.5 : 1 });
+      g.appendChild(el("rect", {
         x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 4,
-        fill: "hsl(" + hue + " 60% 48%)", stroke: "hsl(" + hue + " 60% 32%)", "stroke-width": 1.5
+        fill: "hsl(" + hue + " 60% 48%)",
+        stroke: bad ? "var(--danger)" : (sel ? "var(--accent)" : "hsl(" + hue + " 60% 32%)"),
+        "stroke-width": (bad || sel) ? 3 : 1.5
       }));
       if (rw > 44 && rh > 18) {
         var maxCh = Math.max(Math.floor((rw - 8) / 7), 1);
         var label = c.name.length > maxCh ? c.name.slice(0, Math.max(maxCh - 1, 1)) + "…" : c.name;
-        var t = el("text", { x: rx + rw / 2, y: ry + rh / 2 + (rh > 36 ? -2 : 4), "text-anchor": "middle", style: "fill:#fff;font-size:12px;font-weight:600;pointer-events:none" }, label);
-        svg.appendChild(t);
+        g.appendChild(el("text", {
+          x: rx + rw / 2, y: ry + rh / 2 + (rh > 36 ? -2 : 4), "text-anchor": "middle",
+          style: "fill:#fff;font-size:12px;font-weight:600;pointer-events:none"
+        }, label));
         if (rh > 36 && rw > 70) {
-          svg.appendChild(el("text", { x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle", style: "fill:#fff;fill-opacity:.85;font-size:11px;pointer-events:none" }, c.l + "×" + c.w));
+          g.appendChild(el("text", {
+            x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle",
+            style: "fill:#fff;fill-opacity:.85;font-size:11px;pointer-events:none"
+          }, dm.l + "×" + dm.w));
         }
       }
+      svg.appendChild(g);
     });
 
-    // метка двери (задняя сторона справа)
+    // место, куда ляжет груз, и линии притяжения
+    if (drag && drag.preview) {
+      var pv = drag.preview, pd = dimsOf(pv), ph2 = hueOf(cargoById(pv.cid));
+      svg.appendChild(el("rect", {
+        x: x0 + pv.x * scale, y: y0 + pv.y * scale, width: pd.l * scale, height: pd.w * scale, rx: 4,
+        fill: "hsl(" + ph2 + " 60% 48% / .4)", stroke: "hsl(" + ph2 + " 60% 40%)",
+        "stroke-width": 1.5, "stroke-dasharray": "5 4"
+      }));
+    }
+    if (drag && drag.guides) {
+      if (drag.guides.gx !== null) {
+        svg.appendChild(el("line", {
+          x1: x0 + drag.guides.gx * scale, y1: y0, x2: x0 + drag.guides.gx * scale, y2: y0 + ph,
+          stroke: "var(--accent)", "stroke-width": 1.5, "stroke-dasharray": "4 4"
+        }));
+      }
+      if (drag.guides.gy !== null) {
+        svg.appendChild(el("line", {
+          x1: x0, y1: y0 + drag.guides.gy * scale, x2: x0 + pw, y2: y0 + drag.guides.gy * scale,
+          stroke: "var(--accent)", "stroke-width": 1.5, "stroke-dasharray": "4 4"
+        }));
+      }
+    }
+
+    // двери и кабина
     svg.appendChild(el("line", {
       x1: x0 + pw, y1: y0 + 6, x2: x0 + pw, y2: y0 + ph - 6,
       stroke: "var(--accent)", "stroke-width": 4, "stroke-linecap": "round"
@@ -317,43 +474,348 @@
     svg.appendChild(el("line", { x1: lx, y1: y0, x2: lx, y2: y0 + ph, stroke: "var(--muted)" }));
     svg.appendChild(el("line", { x1: lx - 5, y1: y0, x2: lx + 5, y2: y0, stroke: "var(--muted)" }));
     svg.appendChild(el("line", { x1: lx - 5, y1: y0 + ph, x2: lx + 5, y2: y0 + ph, stroke: "var(--muted)" }));
-    var t = el("text", {
+    svg.appendChild(el("text", {
       x: lx - 8, y: y0 + ph / 2, "text-anchor": "middle",
       transform: "rotate(-90 " + (lx - 8) + " " + (y0 + ph / 2) + ")"
-    }, "Ширина " + d.w + " см");
-    svg.appendChild(t);
+    }, "Ширина " + d.w + " см"));
+
+    drawSide($("side-l"), false, d);
+    drawSide($("side-r"), true, d);
   }
 
-  var lastLayout = { placed: [], miss: {} };
+  // ---------- вид сбоку ----------
+  // flip = false: смотрим с нижнего края вида сверху (левый борт), кабина слева
+  // flip = true: смотрим с верхнего края (правый борт), кабина справа
+  function drawSide(sv, flip, d) {
+    var padL = 50, padR = 20, padT = 40, padB = 50;
+    var scale = Math.min((VB_W - padL - padR) / d.l, 260 / d.h);
+    var pw = d.l * scale, ph = d.h * scale;
+    var x0 = padL, y0 = padT, base = y0 + ph;
+    sv.setAttribute("viewBox", "0 0 " + VB_W + " " + (padT + ph + padB));
+    while (sv.firstChild) sv.removeChild(sv.firstChild);
 
-  // простая автораскладка по колонкам: от кабины к дверям, поперек кузова
-  function layout(d) {
-    var placed = [], miss = {}, x = 0, y = 0, colL = 0;
-    cargo.forEach(function (c) {
-      miss[c.id] = 0;
-      for (var i = 0; i < c.q; i++) {
-        if (c.h > d.h || c.l > d.l || c.w > d.w) { miss[c.id]++; continue; }
-        if (y + c.w > d.w) { x += colL; y = 0; colL = 0; }
-        if (x + c.l > d.l) { miss[c.id]++; continue; }
-        placed.push({ c: c, x: x, y: y });
-        y += c.w;
-        colL = Math.max(colL, c.l);
+    var grid = el("g", { stroke: "var(--grid)", "stroke-width": 1 });
+    for (var gx = 100; gx < d.l; gx += 100) {
+      grid.appendChild(el("line", { x1: x0 + gx * scale, y1: y0, x2: x0 + gx * scale, y2: base }));
+    }
+    for (var gy = 100; gy < d.h; gy += 100) {
+      grid.appendChild(el("line", { x1: x0, y1: base - gy * scale, x2: x0 + pw, y2: base - gy * scale }));
+    }
+    sv.appendChild(el("rect", { x: x0, y: y0, width: pw, height: ph, rx: 12, fill: "var(--body-fill)" }));
+    sv.appendChild(grid);
+    sv.appendChild(el("rect", {
+      x: x0, y: y0, width: pw, height: ph, rx: 12,
+      fill: "none", stroke: "var(--muted)", "stroke-width": 1.5
+    }));
+
+    // дальние места рисуем первыми, ближние поверх
+    var list = units.filter(function (u) { return u.placed && !u.out; });
+    list.sort(function (a, b) { return flip ? b.y - a.y : a.y - b.y; });
+    list.forEach(function (u) {
+      var c = cargoById(u.cid), dm = dimsOf(u), hue = hueOf(c), sel = u.uid === selectedUid;
+      var ux = flip ? d.l - u.x - dm.l : u.x;
+      var rx = x0 + ux * scale, rw = dm.l * scale, rh = c.h * scale;
+      var ry = base - ((u.z || 0) + c.h) * scale;
+      sv.appendChild(el("rect", {
+        x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 4,
+        fill: "hsl(" + hue + " 60% 48%)",
+        stroke: sel ? "var(--accent)" : "hsl(" + hue + " 60% 32%)",
+        "stroke-width": sel ? 3 : 1.5
+      }));
+      if (rw > 44 && rh > 18) {
+        var maxCh = Math.max(Math.floor((rw - 8) / 7), 1);
+        var label = c.name.length > maxCh ? c.name.slice(0, Math.max(maxCh - 1, 1)) + "…" : c.name;
+        sv.appendChild(el("text", {
+          x: rx + rw / 2, y: ry + rh / 2 + (rh > 36 ? -2 : 4), "text-anchor": "middle",
+          style: "fill:#fff;font-size:12px;font-weight:600;pointer-events:none"
+        }, label));
+        if (rh > 36 && rw > 70) {
+          sv.appendChild(el("text", {
+            x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle",
+            style: "fill:#fff;fill-opacity:.85;font-size:11px;pointer-events:none"
+          }, dm.l + "×" + c.h));
+        }
       }
     });
-    return { placed: placed, miss: miss };
+
+    // кабина и двери
+    var doorX = flip ? x0 : x0 + pw;
+    sv.appendChild(el("line", {
+      x1: doorX, y1: y0 + 6, x2: doorX, y2: base - 6,
+      stroke: "var(--accent)", "stroke-width": 4, "stroke-linecap": "round"
+    }));
+    sv.appendChild(el("text", { x: flip ? x0 + pw : x0, y: y0 - 10, "text-anchor": flip ? "end" : "start" }, "Кабина"));
+    sv.appendChild(el("text", { x: flip ? x0 : x0 + pw, y: y0 - 10, "text-anchor": flip ? "start" : "end" }, "Двери"));
+
+    // размеры
+    var ly = base + 26;
+    sv.appendChild(el("line", { x1: x0, y1: ly, x2: x0 + pw, y2: ly, stroke: "var(--muted)" }));
+    sv.appendChild(el("line", { x1: x0, y1: ly - 5, x2: x0, y2: ly + 5, stroke: "var(--muted)" }));
+    sv.appendChild(el("line", { x1: x0 + pw, y1: ly - 5, x2: x0 + pw, y2: ly + 5, stroke: "var(--muted)" }));
+    sv.appendChild(el("text", { x: x0 + pw / 2, y: ly + 18, "text-anchor": "middle" }, "Длина " + d.l + " см"));
+    var lx = x0 - 18;
+    sv.appendChild(el("line", { x1: lx, y1: y0, x2: lx, y2: base, stroke: "var(--muted)" }));
+    sv.appendChild(el("line", { x1: lx - 5, y1: y0, x2: lx + 5, y2: y0, stroke: "var(--muted)" }));
+    sv.appendChild(el("line", { x1: lx - 5, y1: base, x2: lx + 5, y2: base, stroke: "var(--muted)" }));
+    sv.appendChild(el("text", {
+      x: lx - 8, y: y0 + ph / 2, "text-anchor": "middle",
+      transform: "rotate(-90 " + (lx - 8) + " " + (y0 + ph / 2) + ")"
+    }, "Высота " + d.h + " см"));
   }
 
-  function update() {
+  // ---------- таблица ----------
+  function renderCargo(d) {
+    var box = $("tbl");
+    if (!cargo.length) {
+      box.innerHTML = '<div class="empty">Груза пока нет. Заполни форму слева и нажми "Добавить груз".</div>';
+      $("total").innerHTML = "";
+      return;
+    }
+    var html = '<p class="hint">Тяни цветной квадрат в кузов. Груз притягивается к стенкам и к другому грузу. Клик по грузу выбирает его, кнопка R поворачивает. Чтобы убрать груз из кузова, вынеси его за пределы.</p>' +
+      '<table><thead><tr><th></th><th>Груз</th><th>Д×Ш×В</th><th>Шт</th><th></th></tr></thead><tbody>';
+    var totalQty = 0;
+    cargo.forEach(function (c) {
+      totalQty += c.q;
+      var inBody = units.filter(function (u) { return u.cid === c.id && u.placed; }).length;
+      var free = c.q - inBody, ok = fits(c, d);
+      var chipOn = free > 0 && ok;
+      html += '<tr>' +
+        '<td><span class="chip' + (chipOn ? '' : ' off') + '" ' + (chipOn ? 'data-chip="' + c.id + '" ' : '') +
+          'style="background:hsl(' + hueOf(c) + ' 60% 48%)" title="' + (chipOn ? 'Перетащи в кузов' : '') + '"></span></td>' +
+        '<td>' + esc(c.name) +
+          (ok ? '<div class="sub">в кузове ' + inBody + ' из ' + c.q + '</div>'
+              : '<div class="miss">не помещается в кузов</div>') + '</td>' +
+        '<td>' + c.l + '×' + c.w + '×' + c.h + '</td>' +
+        '<td><input type="number" min="1" step="1" value="' + c.q + '" data-id="' + c.id + '" aria-label="Количество"></td>' +
+        '<td><button type="button" class="del" data-del="' + c.id + '" aria-label="Удалить">×</button></td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    box.innerHTML = html;
+
+    var bodyVol = d.l * d.w * d.h / 1e6, placedN = 0, floor = 0, vol = 0;
+    units.forEach(function (u) {
+      if (!u.placed) return;
+      var c = cargoById(u.cid);
+      placedN++; floor += c.l * c.w; vol += c.l * c.w * c.h / 1e6;
+    });
+    var ov = Object.keys(findOverlaps()).length;
+    $("total").innerHTML = 'В кузове: <b>' + placedN + '</b> из ' + totalQty + ' мест<br>' +
+      'Занято пола: <b>' + (floor / (d.l * d.w) * 100).toFixed(0) + '%</b><br>' +
+      'Объем груза в кузове: <b>' + vol.toFixed(2) + '</b> м³ из ' + bodyVol.toFixed(1) + ' м³ (' +
+      (vol / bodyVol * 100).toFixed(0) + '%)' +
+      (ov ? '<br><span class="miss">Наложения: ' + ov + ' мест лежат друг на друге</span>' : '');
+  }
+
+  function update(noFit) {
     var d = read();
-    lastLayout = layout(d);
     $("vol").textContent = (d.l * d.w * d.h / 1e6).toFixed(1);
     $("area").textContent = (d.l * d.w / 1e4).toFixed(1);
+    syncUnits();
+    if (!noFit) fitUnits(d);
+    if (selectedUid !== null && !selectedUnit()) selectedUid = null;
+    $("rot").disabled = !selectedUnit();
     drawTop(d);
-    renderCargo();
+    renderCargo(d);
   }
 
+  // ---------- перетаскивание ----------
+  function toCm(cx, cy) {
+    var pt = svg.createSVGPoint();
+    pt.x = cx; pt.y = cy;
+    var p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: (p.x - geom.x0) / geom.scale, y: (p.y - geom.y0) / geom.scale };
+  }
+  function isInside(p, d) { return p.x >= 0 && p.x <= d.l && p.y >= 0 && p.y <= d.w; }
+  function pxPerCm() { return svg.getBoundingClientRect().width / VB_W * geom.scale; }
+
+  // притяжение к стенкам и к краям другого груза
+  function snapPos(dm, nx, ny, d, selfUid) {
+    var thr = 14 / Math.max(pxPerCm(), 0.05);
+    var others = units.filter(function (o) { return o.placed && !o.out && o.uid !== selfUid; });
+    var gx = null, gy = null, bx = nx, by = ny, best;
+
+    best = null;
+    function tryX(v, guide) {
+      var dist = Math.abs(v - nx);
+      if (dist <= thr && (best === null || dist < best)) { best = dist; bx = v; gx = guide; }
+    }
+    tryX(0, 0); tryX(d.l - dm.l, d.l);
+    others.forEach(function (o) {
+      var od = dimsOf(o);
+      if (ny < o.y + od.w + thr && ny + dm.w > o.y - thr) {
+        tryX(o.x + od.l, o.x + od.l);
+        tryX(o.x - dm.l, o.x);
+        tryX(o.x, o.x);
+        tryX(o.x + od.l - dm.l, o.x + od.l);
+      }
+    });
+
+    best = null;
+    function tryY(v, guide) {
+      var dist = Math.abs(v - ny);
+      if (dist <= thr && (best === null || dist < best)) { best = dist; by = v; gy = guide; }
+    }
+    tryY(0, 0); tryY(d.w - dm.w, d.w);
+    others.forEach(function (o) {
+      var od = dimsOf(o);
+      if (bx < o.x + od.l + thr && bx + dm.l > o.x - thr) {
+        tryY(o.y + od.w, o.y + od.w);
+        tryY(o.y - dm.w, o.y);
+        tryY(o.y, o.y);
+        tryY(o.y + od.w - dm.w, o.y + od.w);
+      }
+    });
+
+    return {
+      x: Math.round(clamp(bx, 0, d.l - dm.l)), y: Math.round(clamp(by, 0, d.w - dm.w)),
+      gx: gx, gy: gy
+    };
+  }
+
+  // если груз лег на другой, сдвигаем его к ближайшей свободной стороне
+  function resolve(u, d) {
+    var dm = dimsOf(u);
+    for (var it = 0; it < 10; it++) {
+      var hit = null;
+      for (var i = 0; i < units.length; i++) {
+        var o = units[i];
+        if (o === u || !o.placed || o.out) continue;
+        var od = dimsOf(o);
+        if (u.x < o.x + od.l - 0.01 && o.x < u.x + dm.l - 0.01 &&
+            u.y < o.y + od.w - 0.01 && o.y < u.y + dm.w - 0.01) { hit = o; break; }
+      }
+      if (!hit) return;
+      var hd = dimsOf(hit);
+      var opts = [
+        { x: hit.x - dm.l, y: u.y, cost: u.x + dm.l - hit.x },
+        { x: hit.x + hd.l, y: u.y, cost: hit.x + hd.l - u.x },
+        { x: u.x, y: hit.y - dm.w, cost: u.y + dm.w - hit.y },
+        { x: u.x, y: hit.y + hd.w, cost: hit.y + hd.w - u.y }
+      ].filter(function (o) {
+        return o.x >= 0 && o.y >= 0 && o.x + dm.l <= d.l && o.y + dm.w <= d.w;
+      }).sort(function (a, b) { return a.cost - b.cost; });
+      if (!opts.length) return;
+      u.x = opts[0].x; u.y = opts[0].y;
+    }
+  }
+
+  // позиция для груза, брошенного из таблицы: центр под курсором, затем притяжение
+  function newPos(p, c, d) {
+    var rot = !(c.l <= d.l && c.w <= d.w);
+    var dm = rot ? { l: c.w, w: c.l } : { l: c.l, w: c.w };
+    var pos = snapPos(dm,
+      clamp(p.x - dm.l / 2, 0, d.l - dm.l), clamp(p.y - dm.w / 2, 0, d.w - dm.w), d, -1);
+    pos.rot = rot;
+    return pos;
+  }
+
+  function moveGhost(e) {
+    var c = cargoById(drag.cid), k = pxPerCm();
+    var gw = Math.max(c.l * k, 20), gh = Math.max(c.w * k, 16);
+    var g = drag.ghost;
+    g.style.width = gw + "px"; g.style.height = gh + "px";
+    g.style.left = (e.clientX - gw / 2) + "px"; g.style.top = (e.clientY - gh / 2) + "px";
+    g.classList.toggle("in", isInside(toCm(e.clientX, e.clientY), read()));
+  }
+
+  function startNew(cid, e) {
+    var c = cargoById(cid);
+    e.preventDefault();
+    var g = document.createElement("div");
+    g.className = "ghost";
+    g.style.background = "hsl(" + hueOf(c) + " 60% 48%)";
+    document.body.appendChild(g);
+    document.body.classList.add("dragging");
+    drag = { type: "new", cid: cid, ghost: g };
+    moveGhost(e);
+  }
+
+  function startUnit(uid, e) {
+    var u = null;
+    for (var i = 0; i < units.length; i++) if (units[i].uid === uid) u = units[i];
+    if (!u) return;
+    e.preventDefault();
+    selectedUid = uid;
+    units.splice(units.indexOf(u), 1);
+    units.push(u);                       // поднять наверх
+    var p = toCm(e.clientX, e.clientY);
+    drag = { type: "unit", u: u, gx: p.x - u.x, gy: p.y - u.y };
+    document.body.classList.add("dragging");
+  }
+
+  window.addEventListener("pointermove", function (e) {
+    if (!drag) return;
+    var d = read(), p = toCm(e.clientX, e.clientY);
+    if (drag.type === "new") {
+      moveGhost(e);
+      if (isInside(p, d)) {
+        var np = newPos(p, cargoById(drag.cid), d);
+        drag.preview = { cid: drag.cid, x: np.x, y: np.y, rot: np.rot };
+        drag.guides = { gx: np.gx, gy: np.gy };
+      } else {
+        drag.preview = null; drag.guides = null;
+      }
+      drawTop(d);
+      return;
+    }
+    var dm = dimsOf(drag.u), nx = p.x - drag.gx, ny = p.y - drag.gy;
+    if (isInside(p, d)) {
+      drag.u.out = false;
+      var pos = snapPos(dm, clamp(nx, 0, d.l - dm.l), clamp(ny, 0, d.w - dm.w), d, drag.u.uid);
+      nx = pos.x; ny = pos.y;
+      drag.guides = { gx: pos.gx, gy: pos.gy };
+    } else {
+      drag.u.out = true;
+      drag.guides = null;
+    }
+    drag.u.x = Math.round(nx); drag.u.y = Math.round(ny);
+    drawTop(d);
+  });
+
+  function finishDrag(e, cancel) {
+    if (!drag) return;
+    var d = read(), p = toCm(e.clientX, e.clientY), inside = !cancel && isInside(p, d);
+    if (drag.type === "new") {
+      var c = cargoById(drag.cid);
+      if (inside) {
+        var u = null;
+        for (var i = 0; i < units.length; i++) {
+          if (units[i].cid === drag.cid && !units[i].placed) { u = units[i]; break; }
+        }
+        if (u) {
+          var np = newPos(p, c, d);
+          u.placed = true; u.out = false; u.rot = np.rot; u.x = np.x; u.y = np.y;
+          units.splice(units.indexOf(u), 1); units.push(u);
+          resolve(u, d);
+        }
+      }
+      document.body.removeChild(drag.ghost);
+    } else {
+      drag.u.out = false;
+      if (!inside) drag.u.placed = false; else resolve(drag.u, d);
+    }
+    document.body.classList.remove("dragging");
+    drag = null;
+    update(false);
+  }
+  window.addEventListener("pointerup", function (e) { finishDrag(e, false); });
+  window.addEventListener("pointercancel", function (e) { finishDrag(e, true); });
+
+  svg.addEventListener("pointerdown", function (e) {
+    var t = e.target;
+    while (t && t !== svg && !(t.getAttribute && t.getAttribute("data-uid"))) t = t.parentNode;
+    if (!t || t === svg) {
+      if (selectedUid !== null) { selectedUid = null; update(true); }
+      return;
+    }
+    startUnit(+t.getAttribute("data-uid"), e);
+  });
+
+  // ---------- события формы и таблицы ----------
   ["len", "wid", "hei"].forEach(function (id) {
-    $(id).addEventListener("input", update);
+    $(id).addEventListener("input", function () { update(true); });
+    $(id).addEventListener("change", function () { update(false); });
   });
 
   document.querySelectorAll("button[data-l]").forEach(function (b) {
@@ -361,52 +823,9 @@
       $("len").value = b.dataset.l;
       $("wid").value = b.dataset.w;
       $("hei").value = b.dataset.h;
-      update();
+      update(false);
     });
   });
-
-  // ---------- груз ----------
-  var cargo = [];
-  var nextId = 1;
-
-  function esc(t) {
-    return String(t).replace(/[&<>"]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
-    });
-  }
-
-  function renderCargo() {
-    var box = $("tbl");
-    if (!cargo.length) {
-      box.innerHTML = '<div class="empty">Груза пока нет. Заполни форму слева и нажми "Добавить груз".</div>';
-      $("total").innerHTML = "";
-      return;
-    }
-    var html = '<table><thead><tr><th>Груз</th><th>Д×Ш×В, см</th><th>Шт</th><th>м³</th><th></th></tr></thead><tbody>';
-    var totalVol = 0, totalQty = 0;
-    cargo.forEach(function (c) {
-      var vol = c.l * c.w * c.h * c.q / 1e6;
-      totalVol += vol; totalQty += c.q;
-      html += '<tr>' +
-        '<td>' + esc(c.name) + (lastLayout.miss[c.id] ? '<div class="miss">не поместилось: ' + lastLayout.miss[c.id] + '</div>' : '') + '</td>' +
-        '<td>' + c.l + '×' + c.w + '×' + c.h + '</td>' +
-        '<td><input type="number" min="1" step="1" value="' + c.q + '" data-id="' + c.id + '" aria-label="Количество"></td>' +
-        '<td>' + vol.toFixed(2) + '</td>' +
-        '<td><button type="button" class="del" data-del="' + c.id + '" aria-label="Удалить">×</button></td>' +
-        '</tr>';
-    });
-    html += '</tbody></table>';
-    box.innerHTML = html;
-
-    var d = read();
-    var bodyVol = d.l * d.w * d.h / 1e6;
-    var floor = 0;
-    lastLayout.placed.forEach(function (u) { floor += u.c.l * u.c.w; });
-    $("total").innerHTML = 'В кузове: <b>' + lastLayout.placed.length + '</b> из ' + totalQty + ' мест<br>' +
-      'Занято пола: <b>' + (floor / (d.l * d.w) * 100).toFixed(0) + '%</b><br>' +
-      'Объем груза: <b>' + totalVol.toFixed(2) + '</b> м³ из ' + bodyVol.toFixed(1) + ' м³ (' +
-      (totalVol / bodyVol * 100).toFixed(0) + '%)';
-  }
 
   $("add").addEventListener("click", function () {
     var l = Math.round(+$("c-l").value), w = Math.round(+$("c-w").value),
@@ -414,31 +833,85 @@
     if (!(l > 0 && w > 0 && h > 0)) { $("err").textContent = "Укажи длину, ширину и высоту больше нуля."; return; }
     if (!(q >= 1)) { $("err").textContent = "Количество должно быть не меньше 1."; return; }
     $("err").textContent = "";
-    var name = $("c-name").value.trim() || ("Груз " + nextId);
-    cargo.push({ id: nextId++, name: name, l: l, w: w, h: h, q: q });
+    var name = $("c-name").value.trim() || ("Груз " + nextCid);
+    cargo.push({ id: nextCid++, name: name, l: l, w: w, h: h, q: q });
     $("c-name").value = "";
-    update();
+    update(false);
   });
 
-  $("tbl").addEventListener("input", function (e) {
+  $("tbl").addEventListener("pointerdown", function (e) {
+    var chip = e.target.closest ? e.target.closest("[data-chip]") : null;
+    if (chip) startNew(+chip.getAttribute("data-chip"), e);
+  });
+
+  $("tbl").addEventListener("change", function (e) {
     var id = e.target.getAttribute("data-id");
     if (!id) return;
     var v = Math.round(+e.target.value);
-    if (!(v >= 1)) return;
+    if (!(v >= 1)) { update(false); return; }
     cargo.forEach(function (c) { if (c.id === +id) c.q = v; });
-    update();
-    var again = document.querySelector('input[data-id="' + id + '"]');
-    if (again) { again.focus(); again.setSelectionRange && again.type !== "number" && again.setSelectionRange(99, 99); }
+    update(false);
   });
 
   $("tbl").addEventListener("click", function (e) {
     var id = e.target.getAttribute("data-del");
     if (!id) return;
     cargo = cargo.filter(function (c) { return c.id !== +id; });
-    update();
+    update(false);
   });
 
-  update();
+  // простая автораскладка: колонками от кабины к дверям
+  $("auto").addEventListener("click", function () {
+    var d = read(), x = 0, y = 0, colL = 0;
+    units.forEach(function (u) { u.placed = false; u.out = false; });
+    units.slice().sort(function (a, b) { return a.uid - b.uid; }).forEach(function (u) {
+      var c = cargoById(u.cid);
+      u.rot = !(c.l <= d.l && c.w <= d.w);
+      if (!fits(c, d)) return;
+      var dm = dimsOf(u);
+      if (y + dm.w > d.w) { x += colL; y = 0; colL = 0; }
+      if (x + dm.l > d.l) return;
+      u.x = x; u.y = y; u.placed = true;
+      y += dm.w; colL = Math.max(colL, dm.l);
+    });
+    update(false);
+  });
+
+  $("clear").addEventListener("click", function () {
+    units.forEach(function (u) { u.placed = false; u.out = false; });
+    update(false);
+  });
+
+  // ---------- поворот ----------
+  var msgTimer = null;
+  function flash(text) {
+    $("rot-msg").textContent = text;
+    clearTimeout(msgTimer);
+    msgTimer = setTimeout(function () { $("rot-msg").textContent = ""; }, 2800);
+  }
+
+  function rotateSelected() {
+    var u = selectedUnit();
+    if (!u) return;
+    var d = read(), old = dimsOf(u), nd = { l: old.w, w: old.l };
+    if (nd.l > d.l || nd.w > d.w) { flash("В повернутом виде груз не помещается в кузов"); return; }
+    u.rot = !u.rot;
+    // поворот вокруг центра
+    u.x = Math.round(clamp(u.x + (old.l - nd.l) / 2, 0, d.l - nd.l));
+    u.y = Math.round(clamp(u.y + (old.w - nd.w) / 2, 0, d.w - nd.w));
+    resolve(u, d);
+    update(false);
+  }
+
+  $("rot").addEventListener("click", rotateSelected);
+  svg.addEventListener("dblclick", rotateSelected);
+  window.addEventListener("keydown", function (e) {
+    var tag = e.target && e.target.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); rotateSelected(); }
+  });
+
+  update(false);
 })();
 </script>
 </body>
