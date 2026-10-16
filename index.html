@@ -213,7 +213,7 @@
       <button type="button" data-u="cm" class="on" aria-pressed="true">см</button>
       <button type="button" data-u="m" aria-pressed="false">м</button>
     </div>
-    <span>Блок B1</span>
+    <span>Блок B2</span>
   </div>
 </nav>
 
@@ -998,7 +998,7 @@
     update(false);
   });
 
-  // ---------- умная автораскладка (пока только по полу) ----------
+  // ---------- умная автораскладка ----------
   function sigNow() {
     return units.filter(function (u) { return u.placed; }).map(function (u) {
       return u.uid + ":" + u.x + ":" + u.y + ":" + (u.rot ? 1 : 0) + ":" + (u.z || 0);
@@ -1018,12 +1018,12 @@
       if (!swap) {
         if (y + dm.w > d.w) { x += run; y = 0; run = 0; }
         if (x + dm.l > d.l) return;
-        res.push({ u: it.u, x: x, y: y, rot: r });
+        res.push({ u: it.u, units: it.units, x: x, y: y, rot: r });
         y += dm.w; run = Math.max(run, dm.l);
       } else {
         if (x + dm.l > d.l) { y += run; x = 0; run = 0; }
         if (y + dm.w > d.w) return;
-        res.push({ u: it.u, x: x, y: y, rot: r });
+        res.push({ u: it.u, units: it.units, x: x, y: y, rot: r });
         x += dm.l; run = Math.max(run, dm.w);
       }
     });
@@ -1062,39 +1062,33 @@
         });
       });
       if (!best) return;
-      res.push({ u: it.u, x: best.x, y: best.y, rot: best.r });
+      res.push({ u: it.u, units: it.units, x: best.x, y: best.y, rot: best.r });
       free = splitFree(free, best.x, best.y, best.w, best.h);
     });
     return res;
   }
 
   function scoreOf(pl) {
-    var area = 0, len = 0, rotN = 0;
+    var vol = 0, len = 0, rotN = 0, n = 0, lv = 1;
     pl.forEach(function (p) {
-      var dm = dimsRot(cargoById(p.u.cid), p.rot);
-      area += dm.l * dm.w; len = Math.max(len, p.x + dm.l);
-      if (p.rot) rotN++;
+      var c = cargoById(p.u.cid), dm = dimsRot(c, p.rot), k = p.units.length;
+      vol += dm.l * dm.w * c.h * k;
+      len = Math.max(len, p.x + dm.l);
+      if (p.rot) rotN += k;
+      n += k; lv = Math.max(lv, k);
     });
-    return { area: area, len: len, rotN: rotN, n: pl.length };
+    return { vol: vol, len: len, rotN: rotN, n: n, lv: lv };
   }
-  // лучше: больше занятая площадь, затем короче занятая длина, затем меньше поворотов
+  // лучше: больше уложенный объем, затем короче занятая длина, затем меньше поворотов
   function isBetter(a, b) {
     if (!b) return true;
-    if (a.area !== b.area) return a.area > b.area;
+    if (a.vol !== b.vol) return a.vol > b.vol;
     if (a.len !== b.len) return a.len < b.len;
     return a.rotN < b.rotN;
   }
 
-  function smartLayout(d) {
-    var items = [];
-    units.slice().sort(function (a, b) { return a.uid - b.uid; }).forEach(function (u) {
-      var c = cargoById(u.cid);
-      if (c.h > d.h) return;
-      var nOk = c.l <= d.l && c.w <= d.w, rOk = c.w <= d.l && c.l <= d.w;
-      if (nOk || rOk) items.push({ u: u, c: c, nOk: nOk, rOk: rOk });
-    });
-    if (!items.length) return null;
-
+  // лучшая укладка "башен" на пол: башня - несколько одинаковых мест друг на друге
+  function packTowers(towers, d) {
     var orders = [
       function (a, b) { return a.u.uid - b.u.uid; },
       function (a, b) { return b.c.l * b.c.w - a.c.l * a.c.w || a.u.uid - b.u.uid; },
@@ -1104,7 +1098,7 @@
 
     // какие типы груза можно класть и так и так
     var flex = [], seen = {};
-    items.forEach(function (it) {
+    towers.forEach(function (it) {
       if (it.nOk && it.rOk && !seen[it.c.id]) { seen[it.c.id] = true; flex.push(it.c); }
     });
     var combos = [];
@@ -1130,14 +1124,53 @@
       if (isBetter(sc, best && best.sc)) best = { pl: pl, sc: sc };
     }
     orders.forEach(function (cmp) {
-      var sorted = items.slice().sort(cmp);
+      var sorted = towers.slice().sort(cmp);
       combos.forEach(function (m) {
         var rotOf = function (it) { return (it.nOk && it.rOk) ? m[it.c.id] : it.rOk; };
         consider(shelfPack(sorted, rotOf, d, false));
         consider(shelfPack(sorted, rotOf, d, true));
       });
-      if (items.length <= 400) consider(maxRectsPack(sorted, d));
+      if (sorted.length <= 400) consider(maxRectsPack(sorted, d));
     });
+    return best;
+  }
+
+  // сначала пробуем без штабелей, затем разрешаем по 2, 3... места в высоту, пока все не поместится
+  function smartLayout(d) {
+    var items = [];
+    units.slice().sort(function (a, b) { return a.uid - b.uid; }).forEach(function (u) {
+      var c = cargoById(u.cid);
+      if (c.h > d.h) return;
+      var nOk = c.l <= d.l && c.w <= d.w, rOk = c.w <= d.l && c.l <= d.w;
+      if (nOk || rOk) items.push({ u: u, c: c, nOk: nOk, rOk: rOk });
+    });
+    if (!items.length) return null;
+
+    var Lmax = 1;
+    items.forEach(function (it) { Lmax = Math.max(Lmax, Math.min(12, Math.floor(d.h / it.c.h))); });
+
+    var byType = {}, order = [];
+    items.forEach(function (it) {
+      if (!byType[it.c.id]) { byType[it.c.id] = []; order.push(it.c.id); }
+      byType[it.c.id].push(it);
+    });
+
+    var best = null;
+    for (var L = 1; L <= Lmax; L++) {
+      var towers = [];
+      order.forEach(function (id) {
+        var arr = byType[id], c = arr[0].c;
+        var cap = Math.max(1, Math.min(L, Math.floor(d.h / c.h)));
+        for (var i = 0; i < arr.length; i += cap) {
+          var grp = arr.slice(i, i + cap);
+          towers.push({ u: grp[0].u, units: grp.map(function (x) { return x.u; }), c: c, nOk: arr[0].nOk, rOk: arr[0].rOk });
+        }
+      });
+      var cand = packTowers(towers, d);
+      if (!cand) continue;
+      if (!best || cand.sc.vol > best.sc.vol) best = cand;   // при равенстве остается меньше этажей
+      if (cand.sc.n === items.length) break;
+    }
     return best;
   }
 
@@ -1147,12 +1180,16 @@
     var best = smartLayout(d);
     if (best) {
       best.pl.forEach(function (p) {
-        p.u.x = p.x; p.u.y = p.y; p.u.rot = p.rot; p.u.placed = true; p.u.z = 0;
+        var c = cargoById(p.u.cid);
+        p.units.forEach(function (u, i) {
+          u.x = p.x; u.y = p.y; u.rot = p.rot; u.placed = true; u.z = i * c.h;
+        });
       });
     }
     var total = units.length, n = best ? best.sc.n : 0;
     autoNote = total ? ("Автораскладка: " + n + " из " + total + " мест" +
-      (best ? ", занято по длине " + fmtDim(best.sc.len) + ", повернуто " + best.sc.rotN : "") +
+      (best ? ", занято по длине " + fmtDim(best.sc.len) + ", повернуто " + best.sc.rotN +
+        (best.sc.lv > 1 ? ", в высоту до " + best.sc.lv + " мест" : "") : "") +
       (n < total ? ". Не поместилось: " + (total - n) : "") + ".") : "";
     update(false);
     autoSig = sigNow();
