@@ -6,174 +6,197 @@
 <title>Раскладка груза в кузове</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rubik+Wet+Paint&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f5f5f7;
-    --panel: #ffffff;
-    --ink: #1d1d1f;
-    --muted: #6e6e73;
-    --line: rgba(0, 0, 0, 0.1);
-    --fill: rgba(120, 120, 128, 0.12);
-    --fill-hover: rgba(120, 120, 128, 0.2);
-    --body-fill: #eef0f4;
-    --grid: rgba(0, 0, 0, 0.07);
-    --accent: #0071e3;
-    --glass: rgba(245, 245, 247, 0.72);
-    --danger: #d70015;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #000000;
-      --panel: #1c1c1e;
-      --ink: #f5f5f7;
-      --muted: #a1a1a6;
-      --line: rgba(255, 255, 255, 0.14);
-      --fill: rgba(120, 120, 128, 0.24);
-      --fill-hover: rgba(120, 120, 128, 0.36);
-      --body-fill: #2a2a2d;
-      --grid: rgba(255, 255, 255, 0.08);
-      --accent: #2997ff;
-      --glass: rgba(0, 0, 0, 0.72);
-      --danger: #ff453a;
-    }
+    color-scheme: dark;
+    --bg: #0b0b0c;
+    --panel: #141416;
+    --ink: #ece8df;
+    --muted: #9b968b;
+    --line: rgba(236, 232, 223, 0.13);
+    --fill: rgba(236, 232, 223, 0.07);
+    --body-fill: #0f1012;
+    --grid: rgba(236, 232, 223, 0.13);
+    --frame: #8f8a7e;
+    --accent: #d9b45a;
+    --select: #5ac8fa;
+    --glass: rgba(11, 11, 12, 0.8);
+    --danger: #ff5a44;
+    --paint: "Rubik Wet Paint", "Rubik Spray Paint", Impact, "Arial Black", sans-serif;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
-    background: var(--bg);
     color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
-    line-height: 1.47;
-    letter-spacing: -0.011em;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 119px, rgba(255, 255, 255, 0.03) 119px 120px),
+      var(--bg);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* верхняя панель в стиле Liquid Glass */
+  /* верхняя панель */
   .nav {
     position: sticky; top: 0; z-index: 10;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 0 24px; height: 48px;
+    padding: 0 24px; height: 52px;
     background: var(--glass);
-    -webkit-backdrop-filter: saturate(180%) blur(24px);
-    backdrop-filter: saturate(180%) blur(24px);
+    -webkit-backdrop-filter: saturate(160%) blur(20px);
+    backdrop-filter: saturate(160%) blur(20px);
     border-bottom: 1px solid var(--line);
-    font-size: 14px;
   }
-  .nav b { font-weight: 600; }
-  .nav span { color: var(--muted); }
+  .nav b {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  /* табличка как на витрине */
+  .nav span {
+    background: #000; border: 1px solid rgba(217, 180, 90, 0.55); color: var(--accent);
+    padding: 4px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+  }
 
-  .hero { padding: 56px 24px 32px; text-align: center; }
+  /* вывеска */
+  .hero { padding: 64px 24px 40px; text-align: center; }
   h1 {
-    margin: 0;
-    font-size: clamp(32px, 5vw, 56px);
-    line-height: 1.07;
-    font-weight: 700;
-    letter-spacing: -0.03em;
+    margin: 0 auto; max-width: 1100px;
+    font-family: var(--paint);
+    font-weight: 400;
+    font-size: clamp(34px, 6.4vw, 84px);
+    line-height: 1.05;
+    text-transform: uppercase;
+    color: var(--ink);
+    transform: rotate(-1.2deg);
+    text-shadow: 0 0 2px rgba(236, 232, 223, 0.35);
   }
   .lead {
-    margin: 12px auto 0; max-width: 560px;
-    font-size: clamp(17px, 2vw, 21px);
-    line-height: 1.3; color: var(--muted); letter-spacing: -0.01em;
+    margin: 22px auto 0; max-width: 560px;
+    font-size: 12px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--muted);
   }
 
   main {
     display: grid;
     grid-template-columns: 300px 1fr 360px;
     gap: 20px;
-    padding: 8px 24px 48px;
+    padding: 8px 24px 56px;
     align-items: start;
     max-width: 1800px; margin: 0 auto;
   }
   @media (max-width: 1100px) {
-    main { grid-template-columns: 1fr; padding: 8px 14px 32px; }
-    .hero { padding: 36px 16px 20px; }
+    main { grid-template-columns: 1fr; padding: 8px 14px 36px; }
+    .hero { padding: 40px 16px 24px; }
   }
   .col { display: grid; gap: 20px; }
+
+  /* панели - как витринные рамы */
   section {
     background: var(--panel);
-    border-radius: 24px;
-    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 26px;
+    box-shadow: inset 0 0 0 5px var(--bg), inset 0 0 0 6px var(--line);
   }
-  h2 { margin: 0 0 16px; font-size: 21px; font-weight: 600; letter-spacing: -0.02em; }
+  h2, .view-title {
+    margin: 0 0 16px;
+    font-family: var(--paint);
+    font-weight: 400;
+    font-size: 22px;
+    line-height: 1.2;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
 
-  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 12px; font-weight: 500; }
+  label {
+    display: block; margin-bottom: 12px;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted);
+  }
   .field { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
   input[type="number"], input[type="text"] {
     width: 100%;
-    font: inherit; font-size: 17px; color: var(--ink);
-    background: var(--fill);
-    border: 1px solid transparent;
-    border-radius: 12px;
+    font: inherit; font-size: 16px; letter-spacing: 0; text-transform: none; font-weight: 500;
+    color: var(--ink);
+    background: var(--body-fill);
+    border: 1px solid var(--line);
+    border-radius: 3px;
     padding: 10px 12px;
-    transition: box-shadow .15s, border-color .15s, background .15s;
+    transition: border-color .15s, box-shadow .15s;
   }
-  input::placeholder { color: var(--muted); opacity: .8; }
-  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); }
+  input::placeholder { color: var(--muted); opacity: .7; }
+  input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217, 180, 90, 0.25); }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .unit { color: var(--muted); font-size: 15px; min-width: 24px; }
+  .unit { color: var(--muted); font-size: 13px; min-width: 24px; letter-spacing: 0; text-transform: none; font-weight: 500; }
 
   .info {
-    margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line);
-    font-size: 15px; color: var(--muted);
+    margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 14px; color: var(--muted);
   }
   .info b { color: var(--ink); font-weight: 600; }
 
   button {
-    font: inherit; font-size: 14px; font-weight: 500; color: var(--ink);
-    background: var(--fill); border: none;
-    border-radius: 980px; padding: 8px 16px; cursor: pointer; margin: 0 6px 8px 0;
-    transition: background .15s, transform .1s;
+    font: inherit; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink); background: transparent;
+    border: 1px solid var(--line); border-radius: 3px;
+    padding: 9px 14px; cursor: pointer; margin: 0 6px 8px 0;
+    transition: border-color .15s, color .15s, background .15s, transform .1s;
   }
-  button:hover { background: var(--fill-hover); }
-  button:active { transform: scale(0.97); }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:active { transform: scale(0.98); }
   .presets { margin-top: 14px; }
 
   .btn-main {
-    width: 100%; margin: 14px 0 0; padding: 12px 20px;
-    background: var(--accent); color: #fff; font-size: 17px; font-weight: 500;
+    width: 100%; margin: 14px 0 0; padding: 13px 20px;
+    background: var(--ink); border-color: var(--ink); color: #0b0b0c; font-size: 13px;
   }
-  .btn-main:hover { background: var(--accent); filter: brightness(1.1); }
+  .btn-main:hover { background: var(--accent); border-color: var(--accent); color: #0b0b0c; }
   .err { color: var(--danger); font-size: 13px; margin-top: 10px; min-height: 18px; }
 
   .row2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
   .row2 label { margin-bottom: 0; }
   .row2 input { padding: 10px 8px; }
 
+  .viewbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+  .viewbar .view-title { margin: 0; margin-right: auto; }
+  .viewbar button { margin: 0; }
+  .rot-msg { font-size: 13px; color: var(--danger); }
+  button:disabled { opacity: .35; cursor: default; }
+  button:disabled:hover { border-color: var(--line); color: var(--ink); }
+  button:disabled:active { transform: none; }
+
   .tbl-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 15px; }
-  th { text-align: left; font-weight: 500; font-size: 13px; color: var(--muted); padding: 6px 6px 10px; border-bottom: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th {
+    text-align: left; font-weight: 600; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); padding: 6px 6px 10px; border-bottom: 1px solid var(--line);
+  }
   td { padding: 10px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
-  td input[type="number"] { width: 68px; padding: 6px 8px; font-size: 15px; border-radius: 10px; }
-  .del { margin: 0; width: 28px; height: 28px; padding: 0; line-height: 1; font-size: 17px; color: var(--muted); }
-  .del:hover { color: var(--danger); }
-  .miss { color: var(--danger); font-size: 12px; margin-top: 2px; }
-  .empty { color: var(--muted); font-size: 15px; padding: 4px 0; }
-  .total { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 15px; color: var(--muted); }
-  .total b { color: var(--ink); font-weight: 600; }
-
-  .view-title { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 8px; }
-  .chip { display: block; width: 24px; height: 24px; border-radius: 7px; cursor: grab; touch-action: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
-  .chip.off { opacity: .3; cursor: not-allowed; }
+  td input[type="number"] { width: 54px; padding: 6px 6px; font-size: 14px; }
+  td, th { padding-left: 4px; padding-right: 4px; }
+  td:nth-child(3) { font-size: 12px; white-space: nowrap; }
+  main > section:last-child { padding: 22px 18px; }
+  .del { margin: 0; width: 28px; height: 28px; padding: 0; line-height: 1; font-size: 16px; color: var(--muted); }
+  .del:hover { color: var(--danger); border-color: var(--danger); }
+  .empty { color: var(--muted); font-size: 14px; padding: 4px 0; }
+  .hint { margin: 0 0 12px; font-size: 12px; color: var(--muted); }
   .sub { font-size: 12px; color: var(--muted); }
-  .hint { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+  .miss { color: var(--danger); font-size: 12px; margin-top: 2px; }
+  .total { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  .total b { color: var(--ink); font-weight: 600; }
   .actions { margin-top: 16px; }
-  .ghost { position: fixed; z-index: 50; pointer-events: none; border-radius: 4px; opacity: .85; border: 2px solid rgba(255,255,255,.85); box-shadow: 0 8px 24px rgba(0,0,0,.28); }
+
+  .chip { display: block; width: 24px; height: 24px; border-radius: 3px; cursor: grab; touch-action: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35); }
+  .chip.off { opacity: .3; cursor: not-allowed; }
+  .ghost { position: fixed; z-index: 50; pointer-events: none; border-radius: 2px; opacity: .85; border: 2px solid rgba(255, 255, 255, .85); box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
   .ghost.in { opacity: 0; }
   body.dragging, body.dragging * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
   #top { overflow: visible; }
   svg .unit { cursor: grab; touch-action: none; }
-  .viewbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-  .viewbar .view-title { margin: 0; margin-right: auto; }
-  .viewbar button { margin: 0; }
-  .rot-msg { font-size: 13px; color: var(--danger); }
-  button:disabled { opacity: .4; cursor: default; }
-  button:disabled:hover { background: var(--fill); }
-  button:disabled:active { transform: none; }
   svg { width: 100%; height: auto; display: block; }
-  svg text { fill: var(--muted); font-family: inherit; font-size: 13px; }
+  svg text { fill: var(--muted); font-family: inherit; font-size: 13px; letter-spacing: 0; }
 </style>
 </head>
 <body>
@@ -314,7 +337,17 @@
     for (var i = 0; i < cargo.length; i++) if (cargo[i].id === id) return cargo[i];
     return null;
   }
-  function hueOf(c) { return (c.id * 47) % 360; }
+  // краски витрины: мел, латунь, кирпич, шалфей, сталь, глина, слива
+  var PALETTE = [
+    { f: "#e9e4d6", l: "#f7f3ea", s: "#9a947f", t: "#161616" },
+    { f: "#d6aa4c", l: "#e8c474", s: "#8a6a1e", t: "#161616" },
+    { f: "#c4533d", l: "#d9765f", s: "#7a2c1d", t: "#ffffff" },
+    { f: "#8fa88b", l: "#aec6aa", s: "#4d6449", t: "#161616" },
+    { f: "#7d9cb8", l: "#9eb9d1", s: "#3d5a74", t: "#161616" },
+    { f: "#c68e74", l: "#dbab92", s: "#7a4a35", t: "#161616" },
+    { f: "#a08aa0", l: "#bda7bd", s: "#5f4a5f", t: "#161616" }
+  ];
+  function colorOf(c) { return PALETTE[(c.id - 1) % PALETTE.length]; }
   function fits(c, d) {
     return c.h <= d.h && ((c.l <= d.l && c.w <= d.w) || (c.w <= d.l && c.l <= d.w));
   }
@@ -371,6 +404,18 @@
   }
 
   // ---------- рисование ----------
+  // стекло витрины: легкий блик по диагонали
+  function addGlass(sv, x, y, w, h) {
+    var id = "gl-" + sv.id;
+    var defs = el("defs", {});
+    var gr = el("linearGradient", { id: id, x1: "0", y1: "0", x2: "1", y2: "1" });
+    gr.appendChild(el("stop", { offset: "0", "stop-color": "#ffffff", "stop-opacity": "0.09" }));
+    gr.appendChild(el("stop", { offset: "0.5", "stop-color": "#ffffff", "stop-opacity": "0.02" }));
+    gr.appendChild(el("stop", { offset: "1", "stop-color": "#ffffff", "stop-opacity": "0" }));
+    defs.appendChild(gr);
+    sv.appendChild(defs);
+    sv.appendChild(el("rect", { x: x, y: y, width: w, height: h, rx: 3, fill: "url(#" + id + ")", "pointer-events": "none" }));
+  }
   function drawTop(d) {
     var padL = 50, padR = 20, padT = 40, padB = 50;
     var maxW = VB_W - padL - padR;
@@ -392,11 +437,12 @@
       grid.appendChild(el("line", { x1: x0, y1: y0 + gy * scale, x2: x0 + pw, y2: y0 + gy * scale }));
     }
 
-    svg.appendChild(el("rect", { x: x0, y: y0, width: pw, height: ph, rx: 12, fill: "var(--body-fill)" }));
+    svg.appendChild(el("rect", { x: x0, y: y0, width: pw, height: ph, rx: 3, fill: "var(--body-fill)" }));
+    addGlass(svg, x0, y0, pw, ph);
     svg.appendChild(grid);
     svg.appendChild(el("rect", {
-      x: x0, y: y0, width: pw, height: ph, rx: 12,
-      fill: "none", stroke: "var(--muted)", "stroke-width": 1.5
+      x: x0, y: y0, width: pw, height: ph, rx: 3,
+      fill: "none", stroke: "var(--frame)", "stroke-width": 2.5
     }));
 
     // подсказка в пустом кузове
@@ -412,27 +458,33 @@
     var over = findOverlaps();
     units.slice().sort(function (a, b) { return (a.z || 0) - (b.z || 0); }).forEach(function (u) {
       if (!u.placed) return;
-      var c = cargoById(u.cid), dm = dimsOf(u), hue = hueOf(c);
+      var c = cargoById(u.cid), dm = dimsOf(u), col = colorOf(c);
       var rx = x0 + u.x * scale, ry = y0 + u.y * scale, rw = dm.l * scale, rh = dm.w * scale;
       var bad = !!over[u.uid], sel = u.uid === selectedUid;
       var g = el("g", { "data-uid": u.uid, "class": "unit", opacity: u.out ? 0.5 : 1 });
       g.appendChild(el("rect", {
-        x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 4,
-        fill: "hsl(" + hue + " 60% " + ((u.z || 0) > 0 ? 58 : 48) + "%)",
-        stroke: bad ? "var(--danger)" : (sel ? "var(--accent)" : "hsl(" + hue + " 60% 32%)"),
-        "stroke-width": (bad || sel) ? 3 : 1.5
+        x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 2,
+        fill: (u.z || 0) > 0 ? col.l : col.f,
+        stroke: bad ? "var(--danger)" : col.s,
+        "stroke-width": bad ? 3 : 1.5
       }));
+      if (sel) {
+        g.appendChild(el("rect", {
+          x: rx - 2.5, y: ry - 2.5, width: rw + 5, height: rh + 5, rx: 4,
+          fill: "none", stroke: "var(--select)", "stroke-width": 2.5, "pointer-events": "none"
+        }));
+      }
       if (rw > 44 && rh > 18) {
         var maxCh = Math.max(Math.floor((rw - 8) / 7), 1);
         var label = c.name.length > maxCh ? c.name.slice(0, Math.max(maxCh - 1, 1)) + "…" : c.name;
         g.appendChild(el("text", {
           x: rx + rw / 2, y: ry + rh / 2 + (rh > 36 ? -2 : 4), "text-anchor": "middle",
-          style: "fill:#fff;font-size:12px;font-weight:600;pointer-events:none"
+          style: "fill:" + col.t + ";font-size:12px;font-weight:600;pointer-events:none"
         }, label));
         if (rh > 36 && rw > 70) {
           g.appendChild(el("text", {
             x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle",
-            style: "fill:#fff;fill-opacity:.85;font-size:11px;pointer-events:none"
+            style: "fill:" + col.t + ";fill-opacity:.7;font-size:11px;pointer-events:none"
           }, dm.l + "×" + dm.w));
         }
       }
@@ -441,10 +493,10 @@
 
     // место, куда ляжет груз, и линии притяжения
     if (drag && drag.preview) {
-      var pv = drag.preview, pd = dimsOf(pv), ph2 = hueOf(cargoById(pv.cid));
+      var pv = drag.preview, pd = dimsOf(pv), pcol = colorOf(cargoById(pv.cid));
       svg.appendChild(el("rect", {
-        x: x0 + pv.x * scale, y: y0 + pv.y * scale, width: pd.l * scale, height: pd.w * scale, rx: 4,
-        fill: "hsl(" + ph2 + " 60% 48% / .4)", stroke: "hsl(" + ph2 + " 60% 40%)",
+        x: x0 + pv.x * scale, y: y0 + pv.y * scale, width: pd.l * scale, height: pd.w * scale, rx: 2,
+        fill: pcol.f, "fill-opacity": 0.35, stroke: pcol.f,
         "stroke-width": 1.5, "stroke-dasharray": "5 4"
       }));
     }
@@ -510,38 +562,43 @@
     for (var gy = 100; gy < d.h; gy += 100) {
       grid.appendChild(el("line", { x1: x0, y1: base - gy * scale, x2: x0 + pw, y2: base - gy * scale }));
     }
-    sv.appendChild(el("rect", { x: x0, y: y0, width: pw, height: ph, rx: 12, fill: "var(--body-fill)" }));
+    sv.appendChild(el("rect", { x: x0, y: y0, width: pw, height: ph, rx: 3, fill: "var(--body-fill)" }));
+    addGlass(sv, x0, y0, pw, ph);
     sv.appendChild(grid);
     sv.appendChild(el("rect", {
-      x: x0, y: y0, width: pw, height: ph, rx: 12,
-      fill: "none", stroke: "var(--muted)", "stroke-width": 1.5
+      x: x0, y: y0, width: pw, height: ph, rx: 3,
+      fill: "none", stroke: "var(--frame)", "stroke-width": 2.5
     }));
 
     // дальние места рисуем первыми, ближние поверх
     var list = units.filter(function (u) { return u.placed && !u.out; });
     list.sort(function (a, b) { return (flip ? b.y - a.y : a.y - b.y) || ((a.z || 0) - (b.z || 0)); });
     list.forEach(function (u) {
-      var c = cargoById(u.cid), dm = dimsOf(u), hue = hueOf(c), sel = u.uid === selectedUid;
+      var c = cargoById(u.cid), dm = dimsOf(u), col = colorOf(c), sel = u.uid === selectedUid;
       var ux = flip ? d.l - u.x - dm.l : u.x;
       var rx = x0 + ux * scale, rw = dm.l * scale, rh = c.h * scale;
       var ry = base - ((u.z || 0) + c.h) * scale;
       sv.appendChild(el("rect", {
-        x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 4,
-        fill: "hsl(" + hue + " 60% 48%)",
-        stroke: sel ? "var(--accent)" : "hsl(" + hue + " 60% 32%)",
-        "stroke-width": sel ? 3 : 1.5
+        x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 2,
+        fill: (u.z || 0) > 0 ? col.l : col.f, stroke: col.s, "stroke-width": 1.5
       }));
+      if (sel) {
+        sv.appendChild(el("rect", {
+          x: rx - 2.5, y: ry - 2.5, width: rw + 5, height: rh + 5, rx: 4,
+          fill: "none", stroke: "var(--select)", "stroke-width": 2.5, "pointer-events": "none"
+        }));
+      }
       if (rw > 44 && rh > 18) {
         var maxCh = Math.max(Math.floor((rw - 8) / 7), 1);
         var label = c.name.length > maxCh ? c.name.slice(0, Math.max(maxCh - 1, 1)) + "…" : c.name;
         sv.appendChild(el("text", {
           x: rx + rw / 2, y: ry + rh / 2 + (rh > 36 ? -2 : 4), "text-anchor": "middle",
-          style: "fill:#fff;font-size:12px;font-weight:600;pointer-events:none"
+          style: "fill:" + col.t + ";font-size:12px;font-weight:600;pointer-events:none"
         }, label));
         if (rh > 36 && rw > 70) {
           sv.appendChild(el("text", {
             x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle",
-            style: "fill:#fff;fill-opacity:.85;font-size:11px;pointer-events:none"
+            style: "fill:" + col.t + ";fill-opacity:.7;font-size:11px;pointer-events:none"
           }, dm.l + "×" + c.h));
         }
       }
@@ -590,7 +647,7 @@
       var chipOn = free > 0 && ok;
       html += '<tr>' +
         '<td><span class="chip' + (chipOn ? '' : ' off') + '" ' + (chipOn ? 'data-chip="' + c.id + '" ' : '') +
-          'style="background:hsl(' + hueOf(c) + ' 60% 48%)" title="' + (chipOn ? 'Перетащи в кузов' : '') + '"></span></td>' +
+          'style="background:' + colorOf(c).f + '" title="' + (chipOn ? 'Перетащи в кузов' : '') + '"></span></td>' +
         '<td>' + esc(c.name) +
           (ok ? '<div class="sub">в кузове ' + inBody + ' из ' + c.q + '</div>'
               : '<div class="miss">не помещается в кузов</div>') + '</td>' +
@@ -780,7 +837,7 @@
     e.preventDefault();
     var g = document.createElement("div");
     g.className = "ghost";
-    g.style.background = "hsl(" + hueOf(c) + " 60% 48%)";
+    g.style.background = colorOf(c).f;
     document.body.appendChild(g);
     document.body.classList.add("dragging");
     drag = { type: "new", cid: cid, ghost: g };
