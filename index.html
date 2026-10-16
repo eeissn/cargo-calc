@@ -687,7 +687,7 @@
     units.forEach(function (u) {
       if (!u.placed) return;
       var c = cargoById(u.cid);
-      placedN++; floor += c.l * c.w; vol += c.l * c.w * c.h / 1e6;
+      placedN++; if (!(u.z > 0)) floor += c.l * c.w; vol += c.l * c.w * c.h / 1e6;
     });
     var ov = Object.keys(findOverlaps()).length;
     $("total").innerHTML = 'В кузове: <b>' + placedN + '</b> из ' + totalQty + ' мест<br>' +
