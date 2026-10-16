@@ -52,6 +52,10 @@
     font-size: 13px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase;
   }
   /* табличка как на витрине */
+  .nav-r { display: flex; align-items: center; gap: 14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .seg button { margin: 0; border: none; border-radius: 0; padding: 6px 14px; font-size: 11px; }
+  .seg button.on, .seg button.on:hover { background: var(--ink); color: #0b0b0c; }
   .nav span {
     background: #000; border: 1px solid rgba(217, 180, 90, 0.55); color: var(--accent);
     padding: 4px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
@@ -187,6 +191,7 @@
   .total { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
   .total b { color: var(--ink); font-weight: 600; }
   .actions { margin-top: 16px; }
+  .autoinfo { margin-top: 4px; font-size: 12px; color: var(--accent); }
 
   .chip { display: block; width: 24px; height: 24px; border-radius: 3px; cursor: grab; touch-action: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35); }
   .chip.off { opacity: .3; cursor: not-allowed; }
@@ -203,7 +208,13 @@
 
 <nav class="nav">
   <b>Раскладка груза</b>
-  <span>Шаг 8</span>
+  <div class="nav-r">
+    <div class="seg" role="group" aria-label="Единицы измерения">
+      <button type="button" data-u="cm" class="on" aria-pressed="true">см</button>
+      <button type="button" data-u="m" aria-pressed="false">м</button>
+    </div>
+    <span>Блок B1</span>
+  </div>
 </nav>
 
 <header class="hero">
@@ -216,19 +227,19 @@
   <section>
     <h2>Кузов</h2>
     <label>Длина
-      <span class="field"><input id="len" type="number" min="50" max="2000" step="1" value="1360"><span class="unit">см</span></span>
+      <span class="field"><input id="len" type="number" min="50" max="2000" step="1" value="1360"><span class="unit ulab">см</span></span>
     </label>
     <label>Ширина
-      <span class="field"><input id="wid" type="number" min="50" max="400" step="1" value="245"><span class="unit">см</span></span>
+      <span class="field"><input id="wid" type="number" min="50" max="400" step="1" value="245"><span class="unit ulab">см</span></span>
     </label>
     <label>Высота
-      <span class="field"><input id="hei" type="number" min="50" max="400" step="1" value="250"><span class="unit">см</span></span>
+      <span class="field"><input id="hei" type="number" min="50" max="400" step="1" value="250"><span class="unit ulab">см</span></span>
     </label>
 
     <div class="presets">
-      <button type="button" data-l="1360" data-w="245" data-h="250">Фура 82 м³</button>
-      <button type="button" data-l="620" data-w="245" data-h="250">Еврофура 20 т</button>
-      <button type="button" data-l="420" data-w="205" data-h="210">Газель</button>
+      <button type="button" data-l="1360" data-w="245" data-h="250">Еврофура 20 т, 82 м³</button>
+      <button type="button" data-l="1360" data-w="245" data-h="270">Еврофура 20 т, 90 м³</button>
+      <button type="button" data-l="423" data-w="213" data-h="216">Газель Next 4,2 м</button>
     </div>
 
     <div class="info">
@@ -243,9 +254,9 @@
       <span class="field"><input id="c-name" type="text" placeholder="Например, паллета"></span>
     </label>
     <div class="row2">
-      <label>Длина, см<span class="field"><input id="c-l" type="number" min="1" step="1" value="120"></span></label>
-      <label>Ширина, см<span class="field"><input id="c-w" type="number" min="1" step="1" value="80"></span></label>
-      <label>Высота, см<span class="field"><input id="c-h" type="number" min="1" step="1" value="150"></span></label>
+      <label>Длина, <span class="ulab">см</span><span class="field"><input id="c-l" type="number" min="1" step="1" value="120"></span></label>
+      <label>Ширина, <span class="ulab">см</span><span class="field"><input id="c-w" type="number" min="1" step="1" value="80"></span></label>
+      <label>Высота, <span class="ulab">см</span><span class="field"><input id="c-h" type="number" min="1" step="1" value="150"></span></label>
     </div>
     <label style="margin-top:10px">Количество
       <span class="field"><input id="c-q" type="number" min="1" step="1" value="1"><span class="unit">шт</span></span>
@@ -284,6 +295,7 @@
       <button type="button" id="auto">Разложить автоматически</button>
       <button type="button" id="clear">Убрать все из кузова</button>
     </div>
+    <div class="autoinfo" id="autoinfo" role="status"></div>
   </section>
 </main>
 
@@ -300,6 +312,7 @@
   var geom = { x0: 50, y0: 40, scale: 1 };
   var drag = null;
   var selectedUid = null;
+  var autoNote = "", autoSig = "";
 
   function el(name, attrs, text) {
     var e = document.createElementNS(NS, name);
@@ -312,11 +325,22 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
   }
+  // единицы показа: внутри все хранится в сантиметрах
+  var U = "cm";
+  function toInput(cm) { return U === "m" ? String(+(cm / 100).toFixed(2)) : String(Math.round(cm)); }
+  function fmtDim(cm) {
+    return U === "m" ? String(+(cm / 100).toFixed(2)).replace(".", ",") + " м" : Math.round(cm) + " см";
+  }
+  function fmtNum(cm) {
+    return U === "m" ? String(+(cm / 100).toFixed(2)).replace(".", ",") : String(Math.round(cm));
+  }
+  function cmOf(id) { return Math.round((+$(id).value || 0) * (U === "m" ? 100 : 1)); }
   function read() {
+    var k = U === "m" ? 100 : 1;
     return {
-      l: Math.max(1, +$("len").value || 0),
-      w: Math.max(1, +$("wid").value || 0),
-      h: Math.max(1, +$("hei").value || 0)
+      l: Math.max(1, Math.round((+$("len").value || 0) * k)),
+      w: Math.max(1, Math.round((+$("wid").value || 0) * k)),
+      h: Math.max(1, Math.round((+$("hei").value || 0) * k))
     };
   }
   function overlapArea(a, b) {
@@ -485,7 +509,7 @@
           g.appendChild(el("text", {
             x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle",
             style: "fill:" + col.t + ";fill-opacity:.7;font-size:11px;pointer-events:none"
-          }, dm.l + "×" + dm.w));
+          }, fmtNum(dm.l) + "×" + fmtNum(dm.w)));
         }
       }
       svg.appendChild(g);
@@ -528,7 +552,7 @@
     svg.appendChild(el("line", { x1: x0, y1: ly, x2: x0 + pw, y2: ly, stroke: "var(--muted)" }));
     svg.appendChild(el("line", { x1: x0, y1: ly - 5, x2: x0, y2: ly + 5, stroke: "var(--muted)" }));
     svg.appendChild(el("line", { x1: x0 + pw, y1: ly - 5, x2: x0 + pw, y2: ly + 5, stroke: "var(--muted)" }));
-    svg.appendChild(el("text", { x: x0 + pw / 2, y: ly + 18, "text-anchor": "middle" }, "Длина " + d.l + " см"));
+    svg.appendChild(el("text", { x: x0 + pw / 2, y: ly + 18, "text-anchor": "middle" }, "Длина " + fmtDim(d.l)));
 
     // размер: ширина
     var lx = x0 - 18;
@@ -538,7 +562,7 @@
     svg.appendChild(el("text", {
       x: lx - 8, y: y0 + ph / 2, "text-anchor": "middle",
       transform: "rotate(-90 " + (lx - 8) + " " + (y0 + ph / 2) + ")"
-    }, "Ширина " + d.w + " см"));
+    }, "Ширина " + fmtDim(d.w)));
 
     drawSide($("side-l"), false, d);
     drawSide($("side-r"), true, d);
@@ -599,7 +623,7 @@
           sv.appendChild(el("text", {
             x: rx + rw / 2, y: ry + rh / 2 + 13, "text-anchor": "middle",
             style: "fill:" + col.t + ";fill-opacity:.7;font-size:11px;pointer-events:none"
-          }, dm.l + "×" + c.h));
+          }, fmtNum(dm.l) + "×" + fmtNum(c.h)));
         }
       }
     });
@@ -618,7 +642,7 @@
     sv.appendChild(el("line", { x1: x0, y1: ly, x2: x0 + pw, y2: ly, stroke: "var(--muted)" }));
     sv.appendChild(el("line", { x1: x0, y1: ly - 5, x2: x0, y2: ly + 5, stroke: "var(--muted)" }));
     sv.appendChild(el("line", { x1: x0 + pw, y1: ly - 5, x2: x0 + pw, y2: ly + 5, stroke: "var(--muted)" }));
-    sv.appendChild(el("text", { x: x0 + pw / 2, y: ly + 18, "text-anchor": "middle" }, "Длина " + d.l + " см"));
+    sv.appendChild(el("text", { x: x0 + pw / 2, y: ly + 18, "text-anchor": "middle" }, "Длина " + fmtDim(d.l)));
     var lx = x0 - 18;
     sv.appendChild(el("line", { x1: lx, y1: y0, x2: lx, y2: base, stroke: "var(--muted)" }));
     sv.appendChild(el("line", { x1: lx - 5, y1: y0, x2: lx + 5, y2: y0, stroke: "var(--muted)" }));
@@ -626,7 +650,7 @@
     sv.appendChild(el("text", {
       x: lx - 8, y: y0 + ph / 2, "text-anchor": "middle",
       transform: "rotate(-90 " + (lx - 8) + " " + (y0 + ph / 2) + ")"
-    }, "Высота " + d.h + " см"));
+    }, "Высота " + fmtDim(d.h)));
   }
 
   // ---------- таблица ----------
@@ -638,7 +662,7 @@
       return;
     }
     var html = '<p class="hint">Тяни цветной квадрат в кузов. Груз притягивается к стенкам и к другому грузу. Клик по грузу выбирает его, кнопка R поворачивает. Груз можно ставить на груз: брось его на другой так, чтобы он опирался хотя бы наполовину. Чтобы убрать груз из кузова, вынеси его за пределы.</p>' +
-      '<table><thead><tr><th></th><th>Груз</th><th>Д×Ш×В</th><th>Шт</th><th></th></tr></thead><tbody>';
+      '<table><thead><tr><th></th><th>Груз</th><th>Д×Ш×В, ' + (U === 'm' ? 'м' : 'см') + '</th><th>Шт</th><th></th></tr></thead><tbody>';
     var totalQty = 0;
     cargo.forEach(function (c) {
       totalQty += c.q;
@@ -651,7 +675,7 @@
         '<td>' + esc(c.name) +
           (ok ? '<div class="sub">в кузове ' + inBody + ' из ' + c.q + '</div>'
               : '<div class="miss">не помещается в кузов</div>') + '</td>' +
-        '<td>' + c.l + '×' + c.w + '×' + c.h + '</td>' +
+        '<td>' + fmtNum(c.l) + '×' + fmtNum(c.w) + '×' + fmtNum(c.h) + '</td>' +
         '<td><input type="number" min="1" step="1" value="' + c.q + '" data-id="' + c.id + '" aria-label="Количество"></td>' +
         '<td><button type="button" class="del" data-del="' + c.id + '" aria-label="Удалить">×</button></td>' +
         '</tr>';
@@ -684,6 +708,7 @@
     $("rot").disabled = !selectedUnit();
     drawTop(d);
     renderCargo(d);
+    renderAutoNote();
   }
 
   // ---------- перетаскивание ----------
@@ -934,16 +959,15 @@
 
   document.querySelectorAll("button[data-l]").forEach(function (b) {
     b.addEventListener("click", function () {
-      $("len").value = b.dataset.l;
-      $("wid").value = b.dataset.w;
-      $("hei").value = b.dataset.h;
+      $("len").value = toInput(+b.dataset.l);
+      $("wid").value = toInput(+b.dataset.w);
+      $("hei").value = toInput(+b.dataset.h);
       update(false);
     });
   });
 
   $("add").addEventListener("click", function () {
-    var l = Math.round(+$("c-l").value), w = Math.round(+$("c-w").value),
-        h = Math.round(+$("c-h").value), q = Math.round(+$("c-q").value);
+    var l = cmOf("c-l"), w = cmOf("c-w"), h = cmOf("c-h"), q = Math.round(+$("c-q").value);
     if (!(l > 0 && w > 0 && h > 0)) { $("err").textContent = "Укажи длину, ширину и высоту больше нуля."; return; }
     if (!(q >= 1)) { $("err").textContent = "Количество должно быть не меньше 1."; return; }
     $("err").textContent = "";
@@ -974,21 +998,165 @@
     update(false);
   });
 
-  // простая автораскладка: колонками от кабины к дверям
-  $("auto").addEventListener("click", function () {
-    var d = read(), x = 0, y = 0, colL = 0;
-    units.forEach(function (u) { u.placed = false; u.out = false; u.z = 0; });
+  // ---------- умная автораскладка (пока только по полу) ----------
+  function sigNow() {
+    return units.filter(function (u) { return u.placed; }).map(function (u) {
+      return u.uid + ":" + u.x + ":" + u.y + ":" + (u.rot ? 1 : 0) + ":" + (u.z || 0);
+    }).sort().join("|");
+  }
+  function renderAutoNote() {
+    $("autoinfo").textContent = (autoNote && autoSig === sigNow()) ? autoNote : "";
+  }
+
+  function dimsRot(c, rot) { return rot ? { l: c.w, w: c.l } : { l: c.l, w: c.w }; }
+
+  // колонки поперек кузова (swap = false) или ряды вдоль кузова (swap = true)
+  function shelfPack(items, rotOf, d, swap) {
+    var res = [], x = 0, y = 0, run = 0;
+    items.forEach(function (it) {
+      var r = rotOf(it), dm = dimsRot(it.c, r);
+      if (!swap) {
+        if (y + dm.w > d.w) { x += run; y = 0; run = 0; }
+        if (x + dm.l > d.l) return;
+        res.push({ u: it.u, x: x, y: y, rot: r });
+        y += dm.w; run = Math.max(run, dm.l);
+      } else {
+        if (x + dm.l > d.l) { y += run; x = 0; run = 0; }
+        if (y + dm.w > d.w) return;
+        res.push({ u: it.u, x: x, y: y, rot: r });
+        x += dm.l; run = Math.max(run, dm.w);
+      }
+    });
+    return res;
+  }
+
+  function splitFree(free, px, py, pw, ph) {
+    var out = [];
+    free.forEach(function (f) {
+      if (px >= f.x + f.w || px + pw <= f.x || py >= f.y + f.h || py + ph <= f.y) { out.push(f); return; }
+      if (px > f.x) out.push({ x: f.x, y: f.y, w: px - f.x, h: f.h });
+      if (px + pw < f.x + f.w) out.push({ x: px + pw, y: f.y, w: f.x + f.w - px - pw, h: f.h });
+      if (py > f.y) out.push({ x: f.x, y: f.y, w: f.w, h: py - f.y });
+      if (py + ph < f.y + f.h) out.push({ x: f.x, y: py + ph, w: f.w, h: f.y + f.h - py - ph });
+    });
+    function inside(a, b) { return a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h; }
+    return out.filter(function (a, i) {
+      return !out.some(function (b, j) { return i !== j && inside(a, b) && (!inside(b, a) || j < i); });
+    });
+  }
+
+  // свободные прямоугольники: каждое место ставим в лучший угол, поворачивая при необходимости
+  function maxRectsPack(items, d) {
+    var free = [{ x: 0, y: 0, w: d.l, h: d.w }], res = [];
+    items.forEach(function (it) {
+      var best = null;
+      free.forEach(function (f) {
+        [false, true].forEach(function (r) {
+          if (r ? !it.rOk : !it.nOk) return;
+          var dm = dimsRot(it.c, r);
+          if (dm.l > f.w || dm.w > f.h) return;
+          var s1 = Math.min(f.w - dm.l, f.h - dm.w), s2 = Math.max(f.w - dm.l, f.h - dm.w);
+          if (!best || s1 < best.s1 || (s1 === best.s1 && s2 < best.s2)) {
+            best = { x: f.x, y: f.y, w: dm.l, h: dm.w, r: r, s1: s1, s2: s2 };
+          }
+        });
+      });
+      if (!best) return;
+      res.push({ u: it.u, x: best.x, y: best.y, rot: best.r });
+      free = splitFree(free, best.x, best.y, best.w, best.h);
+    });
+    return res;
+  }
+
+  function scoreOf(pl) {
+    var area = 0, len = 0, rotN = 0;
+    pl.forEach(function (p) {
+      var dm = dimsRot(cargoById(p.u.cid), p.rot);
+      area += dm.l * dm.w; len = Math.max(len, p.x + dm.l);
+      if (p.rot) rotN++;
+    });
+    return { area: area, len: len, rotN: rotN, n: pl.length };
+  }
+  // лучше: больше занятая площадь, затем короче занятая длина, затем меньше поворотов
+  function isBetter(a, b) {
+    if (!b) return true;
+    if (a.area !== b.area) return a.area > b.area;
+    if (a.len !== b.len) return a.len < b.len;
+    return a.rotN < b.rotN;
+  }
+
+  function smartLayout(d) {
+    var items = [];
     units.slice().sort(function (a, b) { return a.uid - b.uid; }).forEach(function (u) {
       var c = cargoById(u.cid);
-      u.rot = !(c.l <= d.l && c.w <= d.w);
-      if (!fits(c, d)) return;
-      var dm = dimsOf(u);
-      if (y + dm.w > d.w) { x += colL; y = 0; colL = 0; }
-      if (x + dm.l > d.l) return;
-      u.x = x; u.y = y; u.placed = true;
-      y += dm.w; colL = Math.max(colL, dm.l);
+      if (c.h > d.h) return;
+      var nOk = c.l <= d.l && c.w <= d.w, rOk = c.w <= d.l && c.l <= d.w;
+      if (nOk || rOk) items.push({ u: u, c: c, nOk: nOk, rOk: rOk });
     });
+    if (!items.length) return null;
+
+    var orders = [
+      function (a, b) { return a.u.uid - b.u.uid; },
+      function (a, b) { return b.c.l * b.c.w - a.c.l * a.c.w || a.u.uid - b.u.uid; },
+      function (a, b) { return Math.max(b.c.l, b.c.w) - Math.max(a.c.l, a.c.w) || a.u.uid - b.u.uid; },
+      function (a, b) { return Math.min(b.c.l, b.c.w) - Math.min(a.c.l, a.c.w) || a.u.uid - b.u.uid; }
+    ];
+
+    // какие типы груза можно класть и так и так
+    var flex = [], seen = {};
+    items.forEach(function (it) {
+      if (it.nOk && it.rOk && !seen[it.c.id]) { seen[it.c.id] = true; flex.push(it.c); }
+    });
+    var combos = [];
+    function addCombo(fn) {
+      var m = {};
+      flex.forEach(function (c) { m[c.id] = fn(c); });
+      combos.push(m);
+    }
+    addCombo(function () { return false; });
+    addCombo(function () { return true; });
+    addCombo(function (c) { return c.w > c.l; });   // длинной стороной вдоль кузова
+    addCombo(function (c) { return c.l > c.w; });   // длинной стороной поперек
+    if (flex.length <= 8) {
+      for (var mask = 0; mask < (1 << flex.length); mask++) {
+        (function (mk) { addCombo(function (c) { return !!(mk & (1 << flex.indexOf(c))); }); })(mask);
+      }
+    }
+
+    var best = null;
+    function consider(pl) {
+      if (!pl.length) return;
+      var sc = scoreOf(pl);
+      if (isBetter(sc, best && best.sc)) best = { pl: pl, sc: sc };
+    }
+    orders.forEach(function (cmp) {
+      var sorted = items.slice().sort(cmp);
+      combos.forEach(function (m) {
+        var rotOf = function (it) { return (it.nOk && it.rOk) ? m[it.c.id] : it.rOk; };
+        consider(shelfPack(sorted, rotOf, d, false));
+        consider(shelfPack(sorted, rotOf, d, true));
+      });
+      if (items.length <= 400) consider(maxRectsPack(sorted, d));
+    });
+    return best;
+  }
+
+  $("auto").addEventListener("click", function () {
+    var d = read();
+    units.forEach(function (u) { u.placed = false; u.out = false; u.z = 0; u.rot = false; });
+    var best = smartLayout(d);
+    if (best) {
+      best.pl.forEach(function (p) {
+        p.u.x = p.x; p.u.y = p.y; p.u.rot = p.rot; p.u.placed = true; p.u.z = 0;
+      });
+    }
+    var total = units.length, n = best ? best.sc.n : 0;
+    autoNote = total ? ("Автораскладка: " + n + " из " + total + " мест" +
+      (best ? ", занято по длине " + fmtDim(best.sc.len) + ", повернуто " + best.sc.rotN : "") +
+      (n < total ? ". Не поместилось: " + (total - n) : "") + ".") : "";
     update(false);
+    autoSig = sigNow();
+    renderAutoNote();
   });
 
   $("clear").addEventListener("click", function () {
@@ -1024,6 +1192,40 @@
     if (tag === "INPUT" || tag === "TEXTAREA") return;
     if (e.code === "KeyR" && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); rotateSelected(); }
   });
+
+  // ---------- переключатель см / м ----------
+  function setUnit(u) {
+    var d = read();
+    var form = [cmOf("c-l"), cmOf("c-w"), cmOf("c-h")];
+    U = u;
+    ["c-l", "c-w", "c-h"].forEach(function (id, i) {
+      var inp = $(id);
+      inp.value = form[i] > 0 ? toInput(form[i]) : "";
+      inp.step = U === "m" ? "0.01" : "1";
+      inp.min = U === "m" ? "0.01" : "1";
+    });
+    var vals = [d.l, d.w, d.h], ids = ["len", "wid", "hei"];
+    var maxCm = [2000, 400, 400];
+    ids.forEach(function (id, i) {
+      var inp = $(id);
+      inp.value = toInput(vals[i]);
+      inp.step = U === "m" ? "0.01" : "1";
+      inp.min = U === "m" ? "0.5" : "50";
+      inp.max = U === "m" ? String(maxCm[i] / 100) : String(maxCm[i]);
+    });
+    document.querySelectorAll(".ulab").forEach(function (e) { e.textContent = U === "m" ? "м" : "см"; });
+    document.querySelectorAll(".seg button").forEach(function (b) {
+      var on = b.getAttribute("data-u") === U;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    try { localStorage.setItem("cargoUnit", U); } catch (err) {}
+    update(false);
+  }
+  document.querySelectorAll(".seg button").forEach(function (b) {
+    b.addEventListener("click", function () { setUnit(b.getAttribute("data-u")); });
+  });
+  try { if (localStorage.getItem("cargoUnit") === "m") setUnit("m"); } catch (err) {}
 
   update(false);
 })();
