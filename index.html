@@ -175,6 +175,12 @@
   label.opt { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font: 400 13px var(--sans); letter-spacing: 0; text-transform: none; color: var(--ink); }
   label.opt input[type="radio"] { margin: 0; accent-color: var(--cream); }
   label.opt input[type="number"] { width: 60px; padding: 4px 8px; font-size: 13px; }
+  @media (max-width: 600px) {
+    .logo { font-size: 21px; white-space: nowrap; }
+    .badge { display: none; }
+    .seg button { padding: 6px 14px; }
+    section { padding: 18px 16px; }
+  }
 </style>
 
 
@@ -185,7 +191,7 @@
   <div class="brand">
     <i class="dot"></i>
     <span class="logo">раскладка груза</span>
-    <span class="badge">блок D1</span>
+    <span class="badge">блок E2</span>
   </div>
   <div class="seg" role="group" aria-label="Единицы измерения">
     <button type="button" data-u="cm" class="on" aria-pressed="true">см</button>
@@ -283,6 +289,7 @@
   var units = [];          // отдельные места: {uid, cid, x, y, placed, out}
   var nextCid = 1, nextUid = 1;
   var geom = { x0: 50, y0: 40, scale: 1 };
+  var sideGeom = {};
   var drag = null;
   var selectedUid = null;
   var autoNote = "", autoSig = "";
@@ -539,12 +546,13 @@
 
     // груз
     var over = findOverlaps();
+    var lviol = limitViolators();
     var st = computeStacks();
     units.slice().sort(function (a, b) { return (a.z || 0) - (b.z || 0); }).forEach(function (u) {
       if (!u.placed) return;
       var c = cargoById(u.cid), dm = dimsOf(u), col = colorOf(c);
       var rx = x0 + u.x * scale, ry = y0 + u.y * scale, rw = dm.l * scale, rh = dm.w * scale;
-      var bad = !!over[u.uid], sel = u.uid === selectedUid;
+      var bad = !!over[u.uid] || !!lviol[u.uid], sel = u.uid === selectedUid;
       var g = el("g", { "data-uid": u.uid, "class": "unit", opacity: u.out ? 0.5 : 1 });
       if (st.map[u.uid]) g.appendChild(el("title", {}, stackText(st.map[u.uid])));
       g.appendChild(el("rect", {
@@ -644,6 +652,7 @@
     var scale = Math.min((VB_W - padL - padR) / d.l, 260 / d.h);
     var pw = d.l * scale, ph = d.h * scale;
     var x0 = padL, y0 = padT, base = y0 + ph;
+    sideGeom[flip ? "r" : "l"] = { x0: x0, base: base, scale: scale, flip: flip };
     sv.setAttribute("viewBox", "0 0 " + VB_W + " " + (padT + ph + padB));
     while (sv.firstChild) sv.removeChild(sv.firstChild);
 
@@ -670,21 +679,35 @@
       var ux = flip ? d.l - u.x - dm.l : u.x;
       var rx = x0 + ux * scale, rw = dm.l * scale, rh = c.h * scale;
       var ry = base - ((u.z || 0) + c.h) * scale;
-      sv.appendChild(el("rect", {
+      var sg = el("g", { "data-uid": u.uid, "class": "unit" });
+      sg.appendChild(el("rect", {
         x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 2, fill: "var(--body-fill)"
       }));
-      sv.appendChild(el("rect", {
+      sg.appendChild(el("rect", {
         x: rx + 0.75, y: ry + 0.75, width: Math.max(rw - 1.5, 1), height: Math.max(rh - 1.5, 1), rx: 2,
         fill: col.f, "fill-opacity": (u.z || 0) > 0 ? 0.3 : 0.17, stroke: (u.z || 0) > 0 ? col.l : col.f, "stroke-width": 1.5
       }));
       if (sel) {
-        sv.appendChild(el("rect", {
+        sg.appendChild(el("rect", {
           x: rx - 2.5, y: ry - 2.5, width: rw + 5, height: rh + 5, rx: 4,
           fill: "none", stroke: "var(--select)", "stroke-width": 2.5, "pointer-events": "none"
         }));
       }
-      unitGlyph(sv, c, col, rx, ry, rw, rh);
+      unitGlyph(sg, c, col, rx, ry, rw, rh);
+      sv.appendChild(sg);
     });
+
+    // место, куда ляжет груз из таблицы
+    if (drag && drag.preview) {
+      var pv2 = drag.preview, pd2 = dimsOf(pv2), pc2 = cargoById(pv2.cid), pcol2 = colorOf(pc2);
+      var pux = flip ? d.l - pv2.x - pd2.l : pv2.x;
+      sv.appendChild(el("rect", {
+        x: x0 + pux * scale, y: base - ((pv2.z || 0) + pc2.h) * scale,
+        width: pd2.l * scale, height: pc2.h * scale, rx: 2,
+        fill: pcol2.f, "fill-opacity": 0.35, stroke: pcol2.f, "stroke-width": 1.5, "stroke-dasharray": "5 4",
+        "pointer-events": "none"
+      }));
+    }
 
     // кабина и двери
     var doorX = flip ? x0 : x0 + pw;
@@ -762,6 +785,7 @@
       placedN++; if (!(u.z > 0)) floor += c.l * c.w; vol += c.l * c.w * c.h / 1e6;
     });
     var ov = Object.keys(findOverlaps()).length;
+    var lvN = Object.keys(limitViolators()).length;
     var stk = computeStacks().stacks.filter(function (s) { return s.units.length > 1; });
     var tall = null;
     stk.forEach(function (s) { if (!tall || s.top > tall.top) tall = s; });
@@ -770,6 +794,7 @@
       (stk.length ? 'Штабелей: <b>' + stk.length + '</b>, самый высокий: <b>' + fmtDim(tall.top) + '</b> (' + tall.units.length + ' ' + plural(tall.units.length, 'место', 'места', 'мест') + ')<br>' : '') +
       'Объем груза в кузове: <b>' + vol.toFixed(2) + '</b> м³ из ' + bodyVol.toFixed(1) + ' м³ (' +
       (vol / bodyVol * 100).toFixed(0) + '%)' +
+      (lvN ? '<br><span class="miss">Превышен лимит штабелирования: ' + lvN + ' ' + plural(lvN, 'место', 'места', 'мест') + ' (красная рамка)</span>' : '') +
       (ov ? '<br><span class="miss">Наложения: ' + ov + ' мест лежат друг на друге</span>' : '');
   }
 
@@ -870,6 +895,41 @@
   }
 
   // на какой высоте встанет груз: на пол или сверху на другой груз
+  // сколько мест стоит над грузом x (любого вида)
+  function countAbove(x, pl) {
+    var n = 0, top = topOf(x);
+    pl.forEach(function (y) {
+      if (y !== x && (y.z || 0) >= top - 0.5 && overlapArea(y, x) > 0.5) n++;
+    });
+    return n;
+  }
+  // нарушит ли груз u на высоте z чье-то ограничение "сверху до N"
+  function limitCheck(u, z) {
+    var old = u.z;
+    u.z = z;
+    var pl = units.filter(function (o) { return (o.placed && !o.out) || o === u; }), bad = null;
+    pl.forEach(function (x) {
+      if (bad || x === u) return;
+      var c = cargoById(x.cid);
+      if (c.limit === null || c.limit === undefined) return;
+      if (!(z >= topOf(x) - 0.5 && overlapArea(u, x) > 0.5)) return;
+      var n = countAbove(x, pl);
+      if (n > c.limit) bad = { name: c.name, n: n, limit: c.limit };
+    });
+    u.z = old;
+    return bad;
+  }
+  // места, над которыми уже стоит больше, чем разрешено (например, после смены лимита)
+  function limitViolators() {
+    var set = {}, pl = units.filter(function (u) { return u.placed && !u.out; });
+    pl.forEach(function (x) {
+      var c = cargoById(x.cid);
+      if (c.limit === null || c.limit === undefined) return;
+      if (countAbove(x, pl) > c.limit) set[x.uid] = true;
+    });
+    return set;
+  }
+
   function placeZ(u, d) {
     var c = cargoById(u.cid), dm = dimsOf(u), below = [], z = 0;
     for (var i = 0; i < units.length; i++) {
@@ -883,6 +943,8 @@
     below.forEach(function (b) { if (Math.abs(topOf(b) - z) < 0.5) sup += overlapArea(u, b); });
     if (z + c.h > d.h) return { z: 0, ok: false, reason: "height" };
     if (sup < 0.5 * dm.l * dm.w) return { z: 0, ok: false, reason: "support" };
+    var lb = limitCheck(u, z);
+    if (lb) return { z: 0, ok: false, reason: "limit", lim: lb };
     return { z: z, ok: true };
   }
 
@@ -890,9 +952,16 @@
   function finalize(u, d) {
     var r = placeZ(u, d);
     if (r.ok) { u.z = r.z; return; }
-    flash(r.reason === "height"
-      ? "Сверху не хватает высоты, груз лег рядом"
-      : "Опора меньше половины груза, поэтому он лег рядом");
+    if (r.reason === "limit") {
+      flash(r.lim.limit === 0
+        ? "На «" + r.lim.name + "» нельзя ставить груз сверху, поэтому он лег рядом"
+        : "На «" + r.lim.name + "» можно поставить сверху не более " + r.lim.limit + " " +
+          plural(r.lim.limit, "места", "места", "мест") + ", поэтому груз лег рядом");
+    } else {
+      flash(r.reason === "height"
+        ? "Сверху не хватает высоты, груз лег рядом"
+        : "Опора меньше половины груза, поэтому он лег рядом");
+    }
     u.z = 0;
     resolve(u, d);
     var r2 = placeZ(u, d);
@@ -924,13 +993,111 @@
     return pos;
   }
 
+  function unitByUid(uid) {
+    for (var i = 0; i < units.length; i++) if (units[i].uid === uid) return units[i];
+    return null;
+  }
+
+  // ---------- боковые виды: координаты и поиск места ----------
+  function sideSvg(key) { return key === "l" ? $("side-l") : $("side-r"); }
+  function sideToCm(key, cx, cy, d) {
+    var sv = sideSvg(key), g = sideGeom[key];
+    var pt = sv.createSVGPoint();
+    pt.x = cx; pt.y = cy;
+    var p = pt.matrixTransform(sv.getScreenCTM().inverse());
+    var ux = (p.x - g.x0) / g.scale;
+    return { x: g.flip ? d.l - ux : ux, z: (g.base - p.y) / g.scale };
+  }
+  function insideSide(q, d) { return q.x >= 0 && q.x <= d.l && q.z >= 0 && q.z <= d.h; }
+
+  function collides(u) {
+    for (var i = 0; i < units.length; i++) {
+      var o = units[i];
+      if (o === u || !o.placed || o.out) continue;
+      if (overlapArea(u, o) > 0.5 && (u.z || 0) < topOf(o) - 0.01 && (o.z || 0) < topOf(u) - 0.01) return true;
+    }
+    return false;
+  }
+
+  // на боковом виде не видно глубину, поэтому ищем место поперек кузова сами:
+  // где груз встанет на нужной высоте, не заденет соседей и не нарушит ограничения
+  function bestY(u, d, zWanted, prefY) {
+    var dm = dimsOf(u), maxY = d.w - dm.w, cands = [0, maxY], seen = {}, best = null;
+    units.forEach(function (o) {
+      if (o === u || !o.placed || o.out) return;
+      var od = dimsOf(o);
+      cands.push(o.y, o.y + od.w, o.y - dm.w, o.y + od.w - dm.w);
+    });
+    cands.forEach(function (y0) {
+      var y = Math.round(clamp(y0, 0, maxY));
+      if (seen[y]) return;
+      seen[y] = true;
+      u.y = y;
+      var r = placeZ(u, d);
+      if (!r.ok) return;
+      u.z = r.z;
+      if (collides(u)) return;
+      var score = Math.abs(r.z - zWanted) * 1000 + Math.abs(y - prefY);
+      if (best === null || score < best.score) best = { y: y, z: r.z, score: score };
+    });
+    return best;
+  }
+
+  function placeSide(u, rawX, zWanted, prefY, d) {
+    var dm = dimsOf(u), old = { x: u.x, y: u.y, z: u.z };
+    var x = Math.round(clamp(rawX, 0, d.l - dm.l));
+    u.x = x;
+    var b = bestY(u, d, zWanted, prefY);
+    if (b) {
+      var sx = snapPos(dm, x, b.y, d, u.uid).x;
+      if (sx !== x) {
+        u.x = sx;
+        var b2 = bestY(u, d, zWanted, prefY);
+        if (b2) { x = sx; b = b2; }
+      }
+    }
+    u.x = old.x; u.y = old.y; u.z = old.z;
+    return b ? { x: x, y: b.y, z: b.z } : null;
+  }
+
+  // над каким видом сейчас курсор
+  function zoneAt(cx, cy, d) {
+    var p = toCm(cx, cy);
+    if (isInside(p, d)) return { kind: "top", p: p };
+    var keys = ["l", "r"];
+    for (var i = 0; i < keys.length; i++) {
+      if (!sideGeom[keys[i]]) continue;
+      var q = sideToCm(keys[i], cx, cy, d);
+      if (insideSide(q, d)) return { kind: "side", key: keys[i], q: q };
+    }
+    return null;
+  }
+  function freeUnitFor(cid) {
+    for (var i = 0; i < units.length; i++) {
+      if (units[i].cid === cid && !units[i].placed) return units[i];
+    }
+    return null;
+  }
+  // груз из таблицы брошен на боковой вид: x и высота от курсора, глубину подбираем сами
+  function sideDrop(zone, c, d) {
+    var u = freeUnitFor(c.id);
+    if (!u) return null;
+    var rot = !(c.l <= d.l && c.w <= d.w), oldRot = u.rot;
+    u.rot = rot;
+    var dm = dimsOf(u);
+    var prefY = sideGeom[zone.key].flip ? 0 : d.w - dm.w;   // ближе к тому борту, с которого смотрим
+    var res = placeSide(u, zone.q.x - dm.l / 2, zone.q.z - c.h / 2, prefY, d);
+    u.rot = oldRot;
+    return res ? { u: u, rot: rot, x: res.x, y: res.y, z: res.z } : null;
+  }
+
   function moveGhost(e) {
     var c = cargoById(drag.cid), k = pxPerCm();
     var gw = Math.max(c.l * k, 20), gh = Math.max(c.w * k, 16);
     var g = drag.ghost;
     g.style.width = gw + "px"; g.style.height = gh + "px";
     g.style.left = (e.clientX - gw / 2) + "px"; g.style.top = (e.clientY - gh / 2) + "px";
-    g.classList.toggle("in", isInside(toCm(e.clientX, e.clientY), read()));
+    g.classList.toggle("in", !!zoneAt(e.clientX, e.clientY, read()));
   }
 
   function startNew(cid, e) {
@@ -959,17 +1126,47 @@
     document.body.classList.add("dragging");
   }
 
+  function startSideUnit(uid, key, e) {
+    var u = unitByUid(uid);
+    if (!u) return;
+    e.preventDefault();
+    selectedUid = uid;
+    units.splice(units.indexOf(u), 1);
+    units.push(u);
+    var q = sideToCm(key, e.clientX, e.clientY, read());
+    drag = { type: "side", u: u, key: key, gx: q.x - u.x, gz: q.z - (u.z || 0), y0: u.y };
+    document.body.classList.add("dragging");
+  }
+
   window.addEventListener("pointermove", function (e) {
     if (!drag) return;
-    var d = read(), p = toCm(e.clientX, e.clientY);
+    var d = read();
+    if (drag.type === "side") {
+      var q = sideToCm(drag.key, e.clientX, e.clientY, d);
+      if (insideSide(q, d)) {
+        drag.u.out = false;
+        var res = placeSide(drag.u, q.x - drag.gx, q.z - drag.gz, drag.y0, d);
+        if (res) { drag.u.x = res.x; drag.u.y = res.y; drag.u.z = res.z; }
+      } else {
+        drag.u.out = true;
+      }
+      drawTop(d);
+      return;
+    }
+    var p = toCm(e.clientX, e.clientY);
     if (drag.type === "new") {
       moveGhost(e);
-      if (isInside(p, d)) {
-        var np = newPos(p, cargoById(drag.cid), d);
-        drag.preview = { cid: drag.cid, x: np.x, y: np.y, rot: np.rot };
+      var zone = zoneAt(e.clientX, e.clientY, d), c0 = cargoById(drag.cid);
+      drag.preview = null; drag.guides = null;
+      if (zone && zone.kind === "top") {
+        var np = newPos(zone.p, c0, d);
+        var tmp = { uid: -1, cid: c0.id, x: np.x, y: np.y, rot: np.rot, z: 0, placed: true };
+        var rz = placeZ(tmp, d);
+        drag.preview = { cid: c0.id, x: np.x, y: np.y, rot: np.rot, z: rz.ok ? rz.z : 0 };
         drag.guides = { gx: np.gx, gy: np.gy };
-      } else {
-        drag.preview = null; drag.guides = null;
+      } else if (zone && zone.kind === "side") {
+        var sd0 = sideDrop(zone, c0, d);
+        if (sd0) drag.preview = { cid: c0.id, x: sd0.x, y: sd0.y, rot: sd0.rot, z: sd0.z };
       }
       drawTop(d);
       return;
@@ -992,18 +1189,28 @@
   function finishDrag(e, cancel) {
     if (!drag) return;
     var d = read(), p = toCm(e.clientX, e.clientY), inside = !cancel && isInside(p, d);
+    if (drag.type === "side") {
+      inside = !cancel && insideSide(sideToCm(drag.key, e.clientX, e.clientY, d), d);
+    }
     if (drag.type === "new") {
       var c = cargoById(drag.cid);
-      if (inside) {
-        var u = null;
-        for (var i = 0; i < units.length; i++) {
-          if (units[i].cid === drag.cid && !units[i].placed) { u = units[i]; break; }
-        }
+      var zn = cancel ? null : zoneAt(e.clientX, e.clientY, d);
+      if (zn && zn.kind === "top") {
+        var u = freeUnitFor(drag.cid);
         if (u) {
-          var np = newPos(p, c, d);
+          var np = newPos(zn.p, c, d);
           u.placed = true; u.out = false; u.rot = np.rot; u.x = np.x; u.y = np.y;
           units.splice(units.indexOf(u), 1); units.push(u);
           finalize(u, d);
+        }
+      } else if (zn && zn.kind === "side") {
+        var sd = sideDrop(zn, c, d);
+        if (sd) {
+          var u2 = sd.u;
+          u2.placed = true; u2.out = false; u2.rot = sd.rot; u2.x = sd.x; u2.y = sd.y; u2.z = sd.z;
+          units.splice(units.indexOf(u2), 1); units.push(u2);
+        } else {
+          flash("Здесь нет свободного места");
         }
       }
       document.body.removeChild(drag.ghost);
@@ -1018,15 +1225,20 @@
   window.addEventListener("pointerup", function (e) { finishDrag(e, false); });
   window.addEventListener("pointercancel", function (e) { finishDrag(e, true); });
 
-  svg.addEventListener("pointerdown", function (e) {
-    var t = e.target;
-    while (t && t !== svg && !(t.getAttribute && t.getAttribute("data-uid"))) t = t.parentNode;
-    if (!t || t === svg) {
-      if (selectedUid !== null) { selectedUid = null; update(true); }
-      return;
-    }
-    startUnit(+t.getAttribute("data-uid"), e);
-  });
+  function bindView(sv, handler) {
+    sv.addEventListener("pointerdown", function (e) {
+      var tg = e.target;
+      while (tg && tg !== sv && !(tg.getAttribute && tg.getAttribute("data-uid"))) tg = tg.parentNode;
+      if (!tg || tg === sv) {
+        if (selectedUid !== null) { selectedUid = null; update(true); }
+        return;
+      }
+      handler(+tg.getAttribute("data-uid"), e);
+    });
+  }
+  bindView(svg, startUnit);
+  bindView($("side-l"), function (uid, e) { startSideUnit(uid, "l", e); });
+  bindView($("side-r"), function (uid, e) { startSideUnit(uid, "r", e); });
 
   // ---------- события формы и таблицы ----------
   ["len", "wid", "hei"].forEach(function (id) {
@@ -1231,6 +1443,13 @@
     return best;
   }
 
+  // сколько мест одинакового груза можно поставить в одну башню: по высоте кузова и по лимиту
+  function stackCap(c, d) {
+    var n = Math.floor(d.h / c.h);
+    if (c.limit !== null && c.limit !== undefined) n = Math.min(n, c.limit + 1);
+    return Math.max(1, n);
+  }
+
   // сначала пробуем без штабелей, затем разрешаем по 2, 3... места в высоту, пока все не поместится
   function smartLayout(d) {
     var items = [];
@@ -1243,7 +1462,7 @@
     if (!items.length) return null;
 
     var Lmax = 1;
-    items.forEach(function (it) { Lmax = Math.max(Lmax, Math.min(12, Math.floor(d.h / it.c.h))); });
+    items.forEach(function (it) { Lmax = Math.max(Lmax, Math.min(12, stackCap(it.c, d))); });
 
     var byType = {}, order = [];
     items.forEach(function (it) {
@@ -1256,7 +1475,7 @@
       var towers = [];
       order.forEach(function (id) {
         var arr = byType[id], c = arr[0].c;
-        var cap = Math.max(1, Math.min(L, Math.floor(d.h / c.h)));
+        var cap = Math.min(L, stackCap(c, d));
         for (var i = 0; i < arr.length; i += cap) {
           var grp = arr.slice(i, i + cap);
           towers.push({ u: grp[0].u, units: grp.map(function (x) { return x.u; }), c: c, nOk: arr[0].nOk, rOk: arr[0].rOk });
@@ -1286,7 +1505,8 @@
     autoNote = total ? ("Автораскладка: " + n + " из " + total + " мест" +
       (best ? ", занято по длине " + fmtDim(best.sc.len) + ", повернуто " + best.sc.rotN +
         (best.sc.lv > 1 ? ", в высоту до " + best.sc.lv + " мест" : "") : "") +
-      (n < total ? ". Не поместилось: " + (total - n) : "") + ".") : "";
+      (n < total ? ". Не поместилось: " + (total - n) +
+        (cargo.some(function (c) { return c.limit !== null && c.limit !== undefined; }) ? " (учтены ограничения штабелирования)" : "") : "") + ".") : "";
     update(false);
     autoSig = sigNow();
     renderAutoNote();
@@ -1320,6 +1540,8 @@
 
   $("rot").addEventListener("click", rotateSelected);
   svg.addEventListener("dblclick", rotateSelected);
+  $("side-l").addEventListener("dblclick", rotateSelected);
+  $("side-r").addEventListener("dblclick", rotateSelected);
   window.addEventListener("keydown", function (e) {
     var tag = e.target && e.target.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA") return;
