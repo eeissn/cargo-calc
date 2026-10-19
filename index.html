@@ -191,7 +191,7 @@
   <div class="brand">
     <i class="dot"></i>
     <span class="logo">раскладка груза</span>
-    <span class="badge">блок E2</span>
+    <span class="badge">версия 1</span>
   </div>
   <div class="seg" role="group" aria-label="Единицы измерения">
     <button type="button" data-u="cm" class="on" aria-pressed="true">см</button>
@@ -300,11 +300,11 @@
       'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
   }
   var PACK_TYPES = [
-    { id: "pallet", name: "Паллета", svg: ico('<rect x="5" y="3.5" width="14" height="9" rx="1"/><path d="M5 7.5h14"/><rect x="3" y="12.5" width="18" height="2.5"/><path d="M4.5 15h3v3.5h-3zM10.5 15h3v3.5h-3zM16.5 15h3v3.5h-3z"/><rect x="3" y="18.5" width="18" height="2"/>') },
-    { id: "box", name: "Коробка", svg: ico('<path d="M12 3l8 4v10l-8 4-8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/>') },
-    { id: "bag", name: "Мешок", svg: ico('<path d="M9.5 6.7 8.6 4.6 10.2 3h3.6l1.6 1.6-.9 2.1"/><path d="M14.5 6.7C17.8 8.2 19.5 11 19.5 14.2C19.5 18 16.6 20.5 12 20.5C7.4 20.5 4.5 18 4.5 14.2C4.5 11 6.2 8.2 9.5 6.7"/><path d="M9.5 6.7h5"/>') },
-    { id: "barrel", name: "Бочка", svg: ico('<ellipse cx="12" cy="4.5" rx="5" ry="1.6"/><path d="M7 4.5C5.4 9 5.4 15.5 7 19.5M17 4.5c1.6 4.5 1.6 11 0 15M7 19.5c3 1.5 7 1.5 10 0"/><path d="M6 9c3.5 1.4 8.5 1.4 12 0M5.7 12.5c3.8 1.5 8.8 1.5 12.6 0M6 16c3.5 1.4 8.5 1.4 12 0"/>') },
-    { id: "roll", name: "Рулон", svg: ico('<ellipse cx="8" cy="12" rx="3.5" ry="7"/><path d="M8 5h9c1.9 0 3.5 3.1 3.5 7s-1.6 7-3.5 7H8"/><ellipse cx="8" cy="12" rx="1" ry="2"/>') }
+    { id: "pallet", name: "Паллета", svg: ico('<rect x="5.5" y="3.5" width="13" height="12"/><path d="M12 3.5v12M5.5 9.5h13"/><rect x="3" y="15.5" width="18" height="2.5"/><path d="M4.5 18v2.5h3V18M10.5 18v2.5h3V18M16.5 18v2.5h3V18"/>') },
+    { id: "box", name: "Коробка", svg: ico('<path d="M12 2.5l9 4.5v10l-9 4.5-9-4.5V7z"/><path d="M3 7l9 4.5L21 7M12 11.5v10"/><path d="M9 4l9 4.5M6 5.5l9 4.5"/>') },
+    { id: "bag", name: "Мешок", svg: ico('<path d="M8.5 7C7 5.5 7.5 3 10 3c1 0 1.3.8 2 .8s1-.8 2-.8c2.5 0 3 2.5 1.5 4"/><rect x="8.2" y="7" width="7.6" height="2" rx="1"/><path d="M8 9C5 11 4.5 15 4.8 17.5L3.8 20.2c-.2.7.3 1.1 1 1.1h14.4c.7 0 1.2-.4 1-1.1l-1-2.7C19.5 15 19 11 16 9"/><path d="M12 11.8v3.4"/>') },
+    { id: "barrel", name: "Бочка", svg: ico('<ellipse cx="12" cy="5" rx="7" ry="2.3"/><path d="M5 5v13.5M19 5v13.5"/><path d="M5 18.5c0 1.3 3.1 2.3 7 2.3s7-1 7-2.3"/><path d="M5 11.8c0 1.3 3.1 2.3 7 2.3s7-1 7-2.3"/><path d="M15.4 4.6h1.8"/>') },
+    { id: "roll", name: "Рулон", svg: ico('<ellipse cx="7" cy="5.5" rx="4" ry="2"/><ellipse cx="7" cy="5.5" rx="1.5" ry=".8"/><path d="M3 5.5V19c0 1.1 1.8 2 4 2s4-.9 4-2V5.5"/><path d="M9.5 3.7H20a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1h-9"/>') }
   ];
   PACK_TYPES.forEach(function (p) { p.body = p.svg.replace(/^<svg[^>]*>/, "").replace(/<\/svg>$/, ""); });
   var curType = "pallet";
@@ -541,7 +541,7 @@
       svg.appendChild(el("text", {
         x: x0 + pw / 2, y: y0 + ph / 2 + 5, "text-anchor": "middle",
         style: "font-size:17px"
-      }, cargo.length ? "Перетащи груз из таблицы сюда" : "Добавь груз в форме слева"));
+      }, cargo.length ? "Перетащи груз из таблицы сюда" : "Добавь груз в форме «Добавить груз»"));
     }
 
     // груз
@@ -738,7 +738,7 @@
   function renderCargo(d) {
     var box = $("tbl");
     if (!cargo.length) {
-      box.innerHTML = '<div class="empty">Груза пока нет. Заполни форму слева и нажми "Добавить груз".</div>';
+      box.innerHTML = '<div class="empty">Груза пока нет. Заполни форму «Добавить груз» и нажми кнопку.</div>';
       $("total").innerHTML = "";
       return;
     }
@@ -1326,12 +1326,12 @@
       if (!swap) {
         if (y + dm.w > d.w) { x += run; y = 0; run = 0; }
         if (x + dm.l > d.l) return;
-        res.push({ u: it.u, units: it.units, x: x, y: y, rot: r });
+        res.push({ u: it.u, units: it.units, tower: it, x: x, y: y, rot: r });
         y += dm.w; run = Math.max(run, dm.l);
       } else {
         if (x + dm.l > d.l) { y += run; x = 0; run = 0; }
         if (y + dm.w > d.w) return;
-        res.push({ u: it.u, units: it.units, x: x, y: y, rot: r });
+        res.push({ u: it.u, units: it.units, tower: it, x: x, y: y, rot: r });
         x += dm.l; run = Math.max(run, dm.w);
       }
     });
@@ -1370,7 +1370,7 @@
         });
       });
       if (!best) return;
-      res.push({ u: it.u, units: it.units, x: best.x, y: best.y, rot: best.r });
+      res.push({ u: it.u, units: it.units, tower: it, x: best.x, y: best.y, rot: best.r });
       free = splitFree(free, best.x, best.y, best.w, best.h);
     });
     return res;
@@ -1379,10 +1379,10 @@
   function scoreOf(pl) {
     var vol = 0, len = 0, rotN = 0, n = 0, lv = 1;
     pl.forEach(function (p) {
-      var c = cargoById(p.u.cid), dm = dimsRot(c, p.rot), k = p.units.length;
-      vol += dm.l * dm.w * c.h * k;
+      var tw = p.tower, dm = dimsRot(tw.c, p.rot), k = tw.members.length;
+      vol += tw.vol;
       len = Math.max(len, p.x + dm.l);
-      if (p.rot) rotN += k;
+      tw.members.forEach(function (m) { if (m.rot !== p.rot) rotN++; });
       n += k; lv = Math.max(lv, k);
     });
     return { vol: vol, len: len, rotN: rotN, n: n, lv: lv };
@@ -1443,11 +1443,47 @@
     return best;
   }
 
-  // сколько мест одинакового груза можно поставить в одну башню: по высоте кузова и по лимиту
-  function stackCap(c, d) {
-    var n = Math.floor(d.h / c.h);
-    if (c.limit !== null && c.limit !== undefined) n = Math.min(n, c.limit + 1);
-    return Math.max(1, n);
+  // башни из любого груза: сверху можно поставить только то, что помещается в площадь верхнего места,
+  // и только если это разрешают ограничения всех, кто окажется под ним
+  function buildTowers(items, d, L) {
+    var order = items.slice().sort(function (a, b) {
+      return b.c.l * b.c.w - a.c.l * a.c.w || b.c.h - a.c.h || a.u.uid - b.u.uid;
+    });
+    var towers = [];
+    order.forEach(function (it) {
+      var c = it.c, best = null;
+      if (L > 1) {
+        towers.forEach(function (tw) {
+          var k = tw.members.length;
+          if (k >= L || tw.height + c.h > d.h) return;
+          var top = tw.members[k - 1];
+          var A = top.rot ? top.c.w : top.c.l, B = top.rot ? top.c.l : top.c.w, r;
+          if (c.l <= A && c.w <= B) r = false;
+          else if (c.w <= A && c.l <= B) r = true;
+          else return;
+          for (var j = 0; j < k; j++) {
+            var lim = tw.members[j].c.limit;
+            if (lim !== null && lim !== undefined && (k - j) > lim) return;
+          }
+          var area = A * B;
+          if (!best || area < best.area || (area === best.area && tw.height < best.tw.height)) {
+            best = { tw: tw, r: r, area: area };
+          }
+        });
+      }
+      if (best) {
+        best.tw.members.push({ u: it.u, c: c, rot: best.r });
+        best.tw.units.push(it.u);
+        best.tw.height += c.h;
+        best.tw.vol += c.l * c.w * c.h;
+      } else {
+        towers.push({
+          u: it.u, c: c, nOk: it.nOk, rOk: it.rOk, units: [it.u],
+          members: [{ u: it.u, c: c, rot: false }], height: c.h, vol: c.l * c.w * c.h
+        });
+      }
+    });
+    return towers;
   }
 
   // сначала пробуем без штабелей, затем разрешаем по 2, 3... места в высоту, пока все не поместится
@@ -1461,27 +1497,12 @@
     });
     if (!items.length) return null;
 
-    var Lmax = 1;
-    items.forEach(function (it) { Lmax = Math.max(Lmax, Math.min(12, stackCap(it.c, d))); });
-
-    var byType = {}, order = [];
-    items.forEach(function (it) {
-      if (!byType[it.c.id]) { byType[it.c.id] = []; order.push(it.c.id); }
-      byType[it.c.id].push(it);
-    });
+    var minH = items.reduce(function (m, it) { return Math.min(m, it.c.h); }, Infinity);
+    var Lmax = Math.max(1, Math.min(12, Math.floor(d.h / minH)));
 
     var best = null;
     for (var L = 1; L <= Lmax; L++) {
-      var towers = [];
-      order.forEach(function (id) {
-        var arr = byType[id], c = arr[0].c;
-        var cap = Math.min(L, stackCap(c, d));
-        for (var i = 0; i < arr.length; i += cap) {
-          var grp = arr.slice(i, i + cap);
-          towers.push({ u: grp[0].u, units: grp.map(function (x) { return x.u; }), c: c, nOk: arr[0].nOk, rOk: arr[0].rOk });
-        }
-      });
-      var cand = packTowers(towers, d);
+      var cand = packTowers(buildTowers(items, d, L), d);
       if (!cand) continue;
       if (!best || cand.sc.vol > best.sc.vol) best = cand;   // при равенстве остается меньше этажей
       if (cand.sc.n === items.length) break;
@@ -1495,9 +1516,10 @@
     var best = smartLayout(d);
     if (best) {
       best.pl.forEach(function (p) {
-        var c = cargoById(p.u.cid);
-        p.units.forEach(function (u, i) {
-          u.x = p.x; u.y = p.y; u.rot = p.rot; u.placed = true; u.z = i * c.h;
+        var z = 0;
+        p.tower.members.forEach(function (m) {
+          m.u.x = p.x; m.u.y = p.y; m.u.rot = (m.rot !== p.rot); m.u.placed = true; m.u.z = z;
+          z += m.c.h;
         });
       });
     }
