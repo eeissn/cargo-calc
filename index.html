@@ -455,14 +455,17 @@
     return { stacks: stacks, map: map };
   }
   function stackText(s) {
-    var n = s.units.length, byName = {}, order = [];
+    var n = s.units.length, upper = {}, order = [];
     s.units.forEach(function (u) {
+      if (u === s.base) return;
       var nm = cargoById(u.cid).name;
-      if (!byName[nm]) { byName[nm] = 0; order.push(nm); }
-      byName[nm]++;
+      if (!upper[nm]) { upper[nm] = 0; order.push(nm); }
+      upper[nm]++;
     });
-    return n + " " + plural(n, "место", "места", "мест") + " (" +
-      order.map(function (nm) { return nm + " ×" + byName[nm]; }).join(", ") + "), высота " + fmtDim(s.top);
+    var lines = ["Внизу: " + cargoById(s.base.cid).name];
+    if (order.length) lines.push("Сверху: " + order.map(function (nm) { return nm + " ×" + upper[nm]; }).join(", "));
+    lines.push("Всего " + n + " " + plural(n, "место", "места", "мест") + ", высота " + fmtDim(s.top));
+    return lines.join("\n");
   }
 
   // значок типа упаковки внутри груза на виде
@@ -1379,11 +1382,11 @@
   function scoreOf(pl) {
     var vol = 0, len = 0, rotN = 0, n = 0, lv = 1;
     pl.forEach(function (p) {
-      var tw = p.tower, dm = dimsRot(tw.c, p.rot), k = tw.members.length;
-      vol += tw.vol;
+      var bk = p.tower, dm = dimsRot(bk.c, p.rot);
+      vol += bk.vol;
       len = Math.max(len, p.x + dm.l);
-      tw.members.forEach(function (m) { if (m.rot !== p.rot) rotN++; });
-      n += k; lv = Math.max(lv, k);
+      bk.nodes.forEach(function (nd) { if (nd.rot !== p.rot) rotN++; });
+      n += bk.nodes.length; lv = Math.max(lv, bk.lv);
     });
     return { vol: vol, len: len, rotN: rotN, n: n, lv: lv };
   }
@@ -1443,47 +1446,68 @@
     return best;
   }
 
-  // башни из любого груза: сверху можно поставить только то, что помещается в площадь верхнего места,
-  // и только если это разрешают ограничения всех, кто окажется под ним
-  function buildTowers(items, d, L) {
-    var order = items.slice().sort(function (a, b) {
+  // ---------- блоки с несколькими местами на каждом этаже ----------
+  // Блок - основание и все, что стоит над ним. На верхней площади каждого места
+  // может стоять несколько мест рядом, и на каждом из них - свои этажи.
+  function chainOk(node) {
+    for (var a = node; a; a = a.parent) {
+      var lim = a.c.limit;
+      if (lim !== null && lim !== undefined && a.desc + 1 > lim) return false;
+    }
+    return true;
+  }
+
+  // заполняем верхнюю площадь места: сначала один слой рядом друг с другом, затем этажи над каждым
+  function fillSurface(node, pool, d, L, zTop) {
+    if (node.depth >= L) return;
+    var A = node.rot ? node.c.w : node.c.l, B = node.rot ? node.c.l : node.c.w;
+    var free = [{ x: 0, y: 0, w: A, h: B }], placed = [];
+    for (var i = 0; i < pool.length && free.length; i++) {
+      var it = pool[i], c = it.c;
+      if (it.taken || zTop + c.h > d.h || c.l * c.w > A * B) continue;
+      if (!chainOk(node)) break;
+      var best = null;
+      free.forEach(function (f) {
+        [false, true].forEach(function (r) {
+          var w = r ? c.w : c.l, hh = r ? c.l : c.w;
+          if (w > f.w || hh > f.h) return;
+          // меньше остаток площади - лучше; при равенстве остается положение без поворота
+          var waste = f.w * f.h - w * hh;
+          if (!best || waste < best.waste) best = { x: f.x, y: f.y, w: w, h: hh, r: r, waste: waste };
+        });
+      });
+      if (!best) continue;
+      it.taken = true;
+      var child = { u: it.u, c: c, rot: best.r, ox: node.ox + best.x, oy: node.oy + best.y, z: zTop, parent: node, children: [], desc: 0, depth: node.depth + 1 };
+      node.children.push(child);
+      for (var a = node; a; a = a.parent) a.desc++;
+      free = splitFree(free, best.x, best.y, best.w, best.h);
+      placed.push(child);
+    }
+    placed.forEach(function (ch) { fillSurface(ch, pool, d, L, zTop + ch.c.h); });
+  }
+
+  function buildBlocks(items, d, L) {
+    var pool = items.slice().sort(function (a, b) {
       return b.c.l * b.c.w - a.c.l * a.c.w || b.c.h - a.c.h || a.u.uid - b.u.uid;
     });
-    var towers = [];
-    order.forEach(function (it) {
-      var c = it.c, best = null;
-      if (L > 1) {
-        towers.forEach(function (tw) {
-          var k = tw.members.length;
-          if (k >= L || tw.height + c.h > d.h) return;
-          var top = tw.members[k - 1];
-          var A = top.rot ? top.c.w : top.c.l, B = top.rot ? top.c.l : top.c.w, r;
-          if (c.l <= A && c.w <= B) r = false;
-          else if (c.w <= A && c.l <= B) r = true;
-          else return;
-          for (var j = 0; j < k; j++) {
-            var lim = tw.members[j].c.limit;
-            if (lim !== null && lim !== undefined && (k - j) > lim) return;
-          }
-          var area = A * B;
-          if (!best || area < best.area || (area === best.area && tw.height < best.tw.height)) {
-            best = { tw: tw, r: r, area: area };
-          }
-        });
-      }
-      if (best) {
-        best.tw.members.push({ u: it.u, c: c, rot: best.r });
-        best.tw.units.push(it.u);
-        best.tw.height += c.h;
-        best.tw.vol += c.l * c.w * c.h;
-      } else {
-        towers.push({
-          u: it.u, c: c, nOk: it.nOk, rOk: it.rOk, units: [it.u],
-          members: [{ u: it.u, c: c, rot: false }], height: c.h, vol: c.l * c.w * c.h
-        });
-      }
+    pool.forEach(function (it) { it.taken = false; });
+    var blocks = [];
+    pool.forEach(function (it) {
+      if (it.taken) return;
+      it.taken = true;
+      var root = { u: it.u, c: it.c, rot: false, ox: 0, oy: 0, z: 0, parent: null, children: [], desc: 0, depth: 1 };
+      if (L > 1) fillSurface(root, pool, d, L, it.c.h);
+      var nodes = [], vol = 0, lv = 1;
+      (function walk(nd) {
+        nodes.push(nd);
+        vol += nd.c.l * nd.c.w * nd.c.h;
+        lv = Math.max(lv, nd.depth);
+        nd.children.forEach(walk);
+      })(root);
+      blocks.push({ u: it.u, c: it.c, nOk: it.nOk, rOk: it.rOk, root: root, nodes: nodes, vol: vol, lv: lv });
     });
-    return towers;
+    return blocks;
   }
 
   // сначала пробуем без штабелей, затем разрешаем по 2, 3... места в высоту, пока все не поместится
@@ -1502,7 +1526,7 @@
 
     var best = null;
     for (var L = 1; L <= Lmax; L++) {
-      var cand = packTowers(buildTowers(items, d, L), d);
+      var cand = packTowers(buildBlocks(items, d, L), d);
       if (!cand) continue;
       if (!best || cand.sc.vol > best.sc.vol) best = cand;   // при равенстве остается меньше этажей
       if (cand.sc.n === items.length) break;
@@ -1516,10 +1540,13 @@
     var best = smartLayout(d);
     if (best) {
       best.pl.forEach(function (p) {
-        var z = 0;
-        p.tower.members.forEach(function (m) {
-          m.u.x = p.x; m.u.y = p.y; m.u.rot = (m.rot !== p.rot); m.u.placed = true; m.u.z = z;
-          z += m.c.h;
+        p.tower.nodes.forEach(function (nd) {
+          // если блок повернут, места на нем зеркально меняют x и y
+          nd.u.x = p.x + (p.rot ? nd.oy : nd.ox);
+          nd.u.y = p.y + (p.rot ? nd.ox : nd.oy);
+          nd.u.rot = (nd.rot !== p.rot);
+          nd.u.placed = true;
+          nd.u.z = nd.z;
         });
       });
     }
