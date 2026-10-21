@@ -154,6 +154,8 @@
   #auto:hover { background: #fff0bd; }
   #clear { background: transparent; color: var(--accent); }
   #clear:hover { background: var(--fill); }
+  .export { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .export .actions { margin-top: 4px; }
   .autoinfo { margin-top: 10px; font: 400 12px var(--mono); color: var(--cream); }
 
   /* плитка груза: значок типа в цвете груза, ее же можно тянуть в кузов */
@@ -191,7 +193,7 @@
   <div class="brand">
     <i class="dot"></i>
     <span class="logo">раскладка груза</span>
-    <span class="badge">версия 1</span>
+    <span class="badge">версия 2</span>
   </div>
   <div class="seg" role="group" aria-label="Единицы измерения">
     <button type="button" data-u="cm" class="on" aria-pressed="true">см</button>
@@ -275,6 +277,13 @@
       <button type="button" id="clear">Убрать все из кузова</button>
     </div>
     <div class="autoinfo" id="autoinfo" role="status"></div>
+    <div class="export">
+      <div class="lbl">Выгрузка схемы</div>
+      <div class="actions">
+        <button type="button" id="png" disabled>Картинка PNG</button>
+        <button type="button" id="pdf" disabled>Файл PDF</button>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -813,6 +822,8 @@
     drawTop(d);
     renderCargo(d);
     renderAutoNote();
+    var hasPlaced = units.some(function (u) { return u.placed; });
+    $("png").disabled = !hasPlaced; $("pdf").disabled = !hasPlaced;
   }
 
   // ---------- перетаскивание ----------
@@ -1614,6 +1625,223 @@
     renderTypes();
   });
   renderTypes();
+
+  // ---------- выгрузка схемы в PNG и PDF ----------
+  // для печати рисунки переводятся в светлую палитру: белый лист, темные линии
+  var PRINT_VARS = {
+    "--muted": "#5e594d", "--accent": "#b8372f", "--body-fill": "#ffffff", "--grid": "rgba(21,20,19,0.12)",
+    "--frame": "#3d3a33", "--select": "none", "--danger": "#d3231f"
+  };
+  var PRINT_MAP = {
+    "#f9e8ac": "#b08a1a", "#fff4cb": "#6b5410",
+    "#d9534a": "#c0392b", "#ea7a71": "#8e2a24",
+    "#a8a02e": "#7d7612", "#c4bc4a": "#565008",
+    "#ede9e1": "#6f6a5c", "#faf8f3": "#3d3a33",
+    "#dd8b4c": "#c06a22", "#eba676": "#8a4a14",
+    "#8fa58b": "#5f7a5a", "#adc2a9": "#3d5a38",
+    "#b7a0c0": "#8a6f99", "#cfbbd6": "#5f4a6e"
+  };
+
+  function printSvg(sv) {
+    var vb = sv.getAttribute("viewBox").split(" ").map(Number);
+    var s = new XMLSerializer().serializeToString(sv);
+    s = s.replace(/var\((--[\w-]+)\)/g, function (m, n) { return PRINT_VARS[n] || m; });
+    s = s.replace(/#[0-9a-fA-F]{6}\b/g, function (h) { return PRINT_MAP[h.toLowerCase()] || h; });
+    s = s.replace(/^<svg/, '<svg width="' + vb[2] + '" height="' + vb[3] + '"');
+    s = s.replace(/^(<svg[^>]*>)/, '$1<style>text{fill:#5e594d;font-size:11px;font-family:"IBM Plex Mono",Consolas,monospace}</style>');
+    return { str: s, w: vb[2], h: vb[3] };
+  }
+  function loadImg(src) {
+    return new Promise(function (ok, fail) {
+      var im = new Image();
+      im.onload = function () { ok(im); };
+      im.onerror = function () { fail(new Error("img")); };
+      im.src = src;
+    });
+  }
+  function svgUrl(str) { return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(str); }
+
+  async function buildReport() {
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+    var d = read(), W = 1240, M = 48, CW = W - 2 * M, S = 2;
+
+    // рисунки видов
+    var views = [
+      ["Вид сверху", $("top")],
+      ["Вид сбоку: левый борт, кабина слева", $("side-l")],
+      ["Вид сбоку: правый борт, кабина справа", $("side-r")]
+    ];
+    var vimgs = [];
+    for (var i = 0; i < views.length; i++) {
+      var ps = printSvg(views[i][1]);
+      var im = await loadImg(svgUrl(ps.str));
+      vimgs.push({ title: views[i][0], img: im, h: CW * ps.h / ps.w });
+    }
+    // значки типов для таблицы
+    var icons = {};
+    for (var k = 0; k < PACK_TYPES.length; k++) {
+      var p = PACK_TYPES[k];
+      icons[p.id] = await loadImg(svgUrl('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3d3a33" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + p.body + '</svg>'));
+    }
+
+    // цифры
+    var placed = units.filter(function (u) { return u.placed; }), floor = 0, vol = 0;
+    placed.forEach(function (u) {
+      var c = cargoById(u.cid);
+      if (!(u.z > 0)) floor += c.l * c.w;
+      vol += c.l * c.w * c.h / 1e6;
+    });
+    var bodyVol = d.l * d.w * d.h / 1e6;
+    var stk = computeStacks().stacks.filter(function (s) { return s.units.length > 1; }), tall = null;
+    stk.forEach(function (s) { if (!tall || s.top > tall.top) tall = s; });
+    var stats = [
+      ["В кузове", placed.length + " из " + units.length + " мест"],
+      ["Занято пола", (floor / (d.l * d.w) * 100).toFixed(0) + "%"],
+      ["Объем груза", vol.toFixed(2) + " м³ из " + bodyVol.toFixed(1) + " м³"],
+      ["Штабели", stk.length ? stk.length + ", выше всех " + fmtDim(tall.top) : "нет"]
+    ];
+
+    // высота листа
+    var rowH = 40, tableH = 44 + cargo.length * rowH + 10;
+    var H = 40 + 96 + 100 + vimgs.reduce(function (a, v) { return a + 46 + v.h + 14; }, 0) + 50 + tableH + 90;
+
+    var cv = document.createElement("canvas");
+    cv.width = W * S; cv.height = Math.round(H * S);
+    var g = cv.getContext("2d");
+    g.scale(S, S);
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, W, H);
+    var SANS = '"Inter", "Segoe UI", Arial, sans-serif', MONO = '"IBM Plex Mono", Consolas, monospace';
+    var y = 40;
+
+    // шапка
+    g.fillStyle = "#b63a33"; g.fillRect(M, y + 6, 14, 14);
+    g.fillStyle = "#151413"; g.font = "700 34px " + SANS; g.textBaseline = "top";
+    g.fillText("Раскладка груза", M + 28, y);
+    g.fillStyle = "#6f6a5c"; g.font = "400 15px " + MONO; g.textAlign = "right";
+    var now = new Date();
+    g.fillText(now.toLocaleDateString("ru-RU") + "  " + now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }), W - M, y + 10);
+    g.textAlign = "left";
+    y += 54;
+    g.fillStyle = "#3d3a33"; g.font = "500 18px " + SANS;
+    g.fillText("Кузов: " + fmtDim(d.l) + " × " + fmtDim(d.w) + " × " + fmtDim(d.h) + "  (объем " + bodyVol.toFixed(1) + " м³)", M, y);
+    y += 44;
+
+    // цифры
+    var cw4 = CW / 4;
+    stats.forEach(function (st, n) {
+      var x = M + n * cw4;
+      g.fillStyle = "#6f6a5c"; g.font = "500 12px " + MONO;
+      g.fillText(st[0].toUpperCase(), x, y);
+      g.fillStyle = "#151413"; g.font = "600 17px " + SANS;
+      g.fillText(st[1], x, y + 20);
+    });
+    y += 62;
+    g.strokeStyle = "#151413"; g.lineWidth = 1; g.beginPath(); g.moveTo(M, y); g.lineTo(W - M, y); g.stroke();
+    y += 22;
+
+    // виды
+    vimgs.forEach(function (v) {
+      g.fillStyle = "#b63a33"; g.fillRect(M, y + 6, 8, 8);
+      g.fillStyle = "#151413"; g.font = "500 13px " + MONO;
+      g.fillText(v.title.toUpperCase(), M + 20, y + 3);
+      y += 30;
+      g.strokeStyle = "rgba(21,20,19,0.18)"; g.lineWidth = 1; g.strokeRect(M + 0.5, y + 0.5, CW - 1, v.h - 1);
+      g.drawImage(v.img, M, y, CW, v.h);
+      y += v.h + 30;
+    });
+
+    // таблица груза
+    y += 4;
+    g.fillStyle = "#b63a33"; g.fillRect(M, y + 6, 8, 8);
+    g.fillStyle = "#151413"; g.font = "500 13px " + MONO;
+    g.fillText("ГРУЗ", M + 20, y + 3);
+    y += 30;
+    var cols = [M + 6, M + 66, M + 430, M + 720, M + 840, M + 980];
+    g.fillStyle = "#6f6a5c"; g.font = "500 11px " + MONO;
+    ["", "НАЗВАНИЕ", "РАЗМЕР Д×Ш×В, " + (U === "m" ? "М" : "СМ"), "ВСЕГО", "В КУЗОВЕ", "СВЕРХУ"].forEach(function (h2, n) {
+      if (h2) g.fillText(h2, cols[n], y);
+    });
+    y += 20;
+    g.strokeStyle = "#151413"; g.beginPath(); g.moveTo(M, y); g.lineTo(W - M, y); g.stroke();
+    cargo.forEach(function (c) {
+      var inBody = units.filter(function (u) { return u.cid === c.id && u.placed; }).length;
+      var col = colorOf(c);
+      var ry = y + 4;
+      g.fillStyle = PRINT_MAP[col.f.toLowerCase()] || col.f; g.fillRect(cols[0], ry + 8, 16, 16);
+      g.drawImage(icons[c.type] || icons.pallet, cols[1], ry + 4, 24, 24);
+      g.fillStyle = "#151413"; g.font = "600 16px " + SANS; g.fillText(c.name, cols[1] + 34, ry + 7);
+      g.fillStyle = "#3d3a33"; g.font = "400 15px " + MONO;
+      g.fillText(fmtNum(c.l) + " × " + fmtNum(c.w) + " × " + fmtNum(c.h), cols[2], ry + 8);
+      g.fillText(String(c.q), cols[3], ry + 8);
+      g.fillStyle = inBody < c.q ? "#b8372f" : "#3d3a33";
+      g.fillText(inBody + " из " + c.q, cols[4], ry + 8);
+      g.fillStyle = "#3d3a33";
+      g.fillText(c.limit === null || c.limit === undefined ? "без ограничений" : (c.limit === 0 ? "нельзя" : "до " + c.limit + " мест"), cols[5], ry + 8);
+      y += rowH;
+      g.strokeStyle = "rgba(21,20,19,0.14)"; g.beginPath(); g.moveTo(M, y); g.lineTo(W - M, y); g.stroke();
+    });
+
+    // примечание
+    y += 22;
+    g.fillStyle = "#6f6a5c"; g.font = "400 13px " + SANS;
+    g.fillText("Схема справочная: вес груза, крепление и допустимые нагрузки на ось не учитываются.", M, y);
+    return cv;
+  }
+
+  function saveBlob(blob, name) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+  function fileStamp() {
+    var n = new Date(), p2 = function (v) { return (v < 10 ? "0" : "") + v; };
+    return n.getFullYear() + "-" + p2(n.getMonth() + 1) + "-" + p2(n.getDate()) + "_" + p2(n.getHours()) + p2(n.getMinutes());
+  }
+
+  // PDF без библиотек: одна страница A4, внутри картинка JPEG
+  function makePdf(jpeg, iw, ih) {
+    var PW = 595.28, PH = 841.89, m = 22;
+    var sc = Math.min((PW - 2 * m) / iw, (PH - 2 * m) / ih);
+    var dw = iw * sc, dh = ih * sc, dx = (PW - dw) / 2, dy = PH - m - dh;
+    var enc = new TextEncoder(), chunks = [], offs = [], len = 0;
+    function push(x) { var b = typeof x === "string" ? enc.encode(x) : x; chunks.push(b); len += b.length; }
+    push("%PDF-1.4\n");
+    offs[1] = len; push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+    offs[2] = len; push("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+    offs[3] = len; push("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + PW + " " + PH + "] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n");
+    offs[4] = len; push("4 0 obj\n<< /Type /XObject /Subtype /Image /Width " + iw + " /Height " + ih + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + jpeg.length + " >>\nstream\n");
+    push(jpeg); push("\nendstream\nendobj\n");
+    var content = "q " + dw.toFixed(2) + " 0 0 " + dh.toFixed(2) + " " + dx.toFixed(2) + " " + dy.toFixed(2) + " cm /Im0 Do Q";
+    offs[5] = len; push("5 0 obj\n<< /Length " + content.length + " >>\nstream\n" + content + "\nendstream\nendobj\n");
+    var xref = len, x = "xref\n0 6\n0000000000 65535 f \n";
+    for (var i = 1; i <= 5; i++) x += ("0000000000" + offs[i]).slice(-10) + " 00000 n \n";
+    push(x + "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
+    return new Blob(chunks, { type: "application/pdf" });
+  }
+
+  async function exportAs(kind) {
+    var btn = $(kind), old = btn.textContent;
+    btn.disabled = true; btn.textContent = "Готовлю...";
+    try {
+      var cv = await buildReport();
+      if (kind === "png") {
+        await new Promise(function (ok) { cv.toBlob(function (b) { saveBlob(b, "raskladka_" + fileStamp() + ".png"); ok(); }, "image/png"); });
+      } else {
+        var b64 = cv.toDataURL("image/jpeg", 0.92).split(",")[1], bin = atob(b64), bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        saveBlob(makePdf(bytes, cv.width, cv.height), "raskladka_" + fileStamp() + ".pdf");
+      }
+    } catch (err) {
+      flash("Не удалось подготовить файл. Попробуй еще раз.");
+    }
+    btn.textContent = old;
+    btn.disabled = !units.some(function (u) { return u.placed; });
+  }
+  $("png").addEventListener("click", function () { exportAs("png"); });
+  $("pdf").addEventListener("click", function () { exportAs("pdf"); });
 
   // ---------- переключатель см / м ----------
   function setUnit(u) {
