@@ -64,9 +64,30 @@
     display: grid; grid-template-columns: 300px 1fr 400px; gap: 16px; align-items: start;
     max-width: 1560px; margin: 0 auto; padding: 20px 24px 48px;
   }
+  .mtabs, .tray { display: none; }
   @media (max-width: 1100px) {
-    main { grid-template-columns: 1fr; padding: 14px 12px 32px; }
+    main { grid-template-columns: 1fr; padding: 10px 12px 120px; gap: 14px; }
     .bar { padding: 0 14px; }
+    section { padding: 14px; }
+    #views-col { order: -1; gap: 10px; }
+    /* на телефоне показываем один вид, а груз лежит в ленте внизу экрана */
+    #sec-views, #sec-side-l, #sec-side-r { display: none; }
+    body[data-mv="top"] #sec-views, body[data-mv="l"] #sec-side-l, body[data-mv="r"] #sec-side-r { display: block; }
+    .mtabs { display: flex; gap: 6px; position: sticky; top: 60px; z-index: 15; padding: 8px 0; background: var(--bg); }
+    .mtabs button { flex: 1; margin: 0; padding: 10px 6px; border: 1px solid var(--line); border-radius: 999px; background: transparent; font: 600 13px var(--sans); color: var(--muted); }
+    .mtabs button.on { border-color: var(--cream); background: var(--cream); color: #151413; }
+    .tray:not([hidden]) {
+      display: flex; align-items: center; gap: 8px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      background: rgba(21, 20, 19, 0.9); border-top: 1px solid var(--line);
+      -webkit-backdrop-filter: saturate(160%) blur(20px); backdrop-filter: saturate(160%) blur(20px);
+    }
+    .tbtn { flex: none; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; font: 600 12px var(--sans); }
+    .tchips { display: flex; flex: 1; gap: 10px; overflow-x: auto; padding: 8px 6px 4px 2px; touch-action: pan-x; -webkit-overflow-scrolling: touch; }
+    .tchip { position: relative; flex: none; display: grid; place-items: center; width: 56px; height: 56px; border: 1px solid; border-radius: 14px; color: var(--cream); touch-action: none; cursor: grab; }
+    .tchip .pk-i { width: 28px; height: 28px; }
+    .tchip.off { opacity: 0.3; cursor: not-allowed; }
+    .tchip .cnt { position: absolute; top: -7px; right: -7px; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 11px; background: var(--cream); color: #151413; font: 600 11px/21px var(--mono); text-align: center; }
   }
   .col { display: grid; gap: 16px; }
   section { margin: 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
@@ -187,13 +208,13 @@
 
 
 </head>
-<body>
+<body data-mv="top">
 
 <header class="bar">
   <div class="brand">
     <i class="dot"></i>
     <span class="logo">раскладка груза</span>
-    <span class="badge">версия 2</span>
+    <span class="badge">версия 3</span>
   </div>
   <div class="seg" role="group" aria-label="Единицы измерения">
     <button type="button" data-u="cm" class="on" aria-pressed="true">см</button>
@@ -247,7 +268,12 @@
   </section>
   </div>
 
-  <div class="col">
+  <div class="col" id="views-col">
+  <div class="mtabs" role="tablist" aria-label="Вид кузова">
+    <button type="button" role="tab" data-mv="top" class="on" aria-selected="true">Сверху</button>
+    <button type="button" role="tab" data-mv="l" aria-selected="false">Левый борт</button>
+    <button type="button" role="tab" data-mv="r" aria-selected="false">Правый борт</button>
+  </div>
   <section id="sec-views">
     <div class="viewbar">
       <p class="view-title">Вид сверху</p>
@@ -257,12 +283,12 @@
     <div class="canvas"><svg id="top" viewBox="0 0 900 300" role="img" aria-label="Кузов, вид сверху"></svg></div>
   </section>
 
-  <section>
+  <section id="sec-side-l">
     <p class="view-title">Вид сбоку: левый борт</p>
     <div class="canvas"><svg id="side-l" viewBox="0 0 900 300" role="img" aria-label="Кузов, левый борт"></svg></div>
   </section>
 
-  <section>
+  <section id="sec-side-r">
     <p class="view-title">Вид сбоку: правый борт</p>
     <div class="canvas"><svg id="side-r" viewBox="0 0 900 300" role="img" aria-label="Кузов, правый борт"></svg></div>
   </section>
@@ -286,6 +312,12 @@
     </div>
   </section>
 </main>
+
+<div class="tray" id="tray" hidden>
+  <button type="button" class="tbtn" id="tauto">Авто</button>
+  <button type="button" class="tbtn" id="trot" disabled>Повернуть</button>
+  <div class="tchips" id="tchips" aria-label="Груз для перетаскивания"></div>
+</div>
 
 <script>
 (function () {
@@ -747,7 +779,22 @@
   }
 
   // ---------- таблица ----------
+  // лента с грузом внизу экрана (на телефоне): тяни плитку на любой вид
+  function renderTray(d) {
+    var tray = $("tray");
+    if (!cargo.length) { tray.hidden = true; return; }
+    tray.hidden = false;
+    $("tchips").innerHTML = cargo.map(function (c) {
+      var free = c.q - units.filter(function (u) { return u.cid === c.id && u.placed; }).length;
+      var on = free > 0 && fits(c, d), col = colorOf(c);
+      return '<div class="tchip' + (on ? '' : ' off') + '" ' + (on ? 'data-chip="' + c.id + '" ' : '') +
+        'style="border-color:' + col.f + ';background:' + col.f + '2e" title="' + esc(c.name) + '">' +
+        typeDef(c.type).svg + '<span class="cnt">' + free + '</span></div>';
+    }).join("");
+  }
+
   function renderCargo(d) {
+    renderTray(d);
     var box = $("tbl");
     if (!cargo.length) {
       box.innerHTML = '<div class="empty">Груза пока нет. Заполни форму «Добавить груз» и нажми кнопку.</div>';
@@ -819,6 +866,7 @@
     settle();
     if (selectedUid !== null && !selectedUnit()) selectedUid = null;
     $("rot").disabled = !selectedUnit();
+    $("trot").disabled = !selectedUnit();
     drawTop(d);
     renderCargo(d);
     renderAutoNote();
@@ -827,14 +875,28 @@
   }
 
   // ---------- перетаскивание ----------
+  // скрытый (на телефоне) вид не принимает груз
+  function viewShown(sv) {
+    var s = sv.closest ? sv.closest("section") : null;
+    return !s || getComputedStyle(s).display !== "none";
+  }
   function toCm(cx, cy) {
+    if (!viewShown(svg)) return { x: -1e9, y: -1e9 };
     var pt = svg.createSVGPoint();
     pt.x = cx; pt.y = cy;
     var p = pt.matrixTransform(svg.getScreenCTM().inverse());
     return { x: (p.x - geom.x0) / geom.scale, y: (p.y - geom.y0) / geom.scale };
   }
   function isInside(p, d) { return p.x >= 0 && p.x <= d.l && p.y >= 0 && p.y <= d.w; }
-  function pxPerCm() { return svg.getBoundingClientRect().width / VB_W * geom.scale; }
+  function pxPerCm() {
+    if (viewShown(svg)) return svg.getBoundingClientRect().width / VB_W * geom.scale;
+    var keys = ["l", "r"];
+    for (var i = 0; i < keys.length; i++) {
+      var sv = sideSvg(keys[i]);
+      if (sideGeom[keys[i]] && viewShown(sv)) return sv.getBoundingClientRect().width / VB_W * sideGeom[keys[i]].scale;
+    }
+    return 1;
+  }
 
   // притяжение к стенкам и к краям другого груза
   function snapPos(dm, nx, ny, d, selfUid) {
@@ -1016,6 +1078,7 @@
   function sideSvg(key) { return key === "l" ? $("side-l") : $("side-r"); }
   function sideToCm(key, cx, cy, d) {
     var sv = sideSvg(key), g = sideGeom[key];
+    if (!viewShown(sv)) return { x: -1e9, z: -1e9 };
     var pt = sv.createSVGPoint();
     pt.x = cx; pt.y = cy;
     var p = pt.matrixTransform(sv.getScreenCTM().inverse());
@@ -1110,8 +1173,8 @@
     var gw = Math.max(c.l * k, 20), gh = Math.max(c.w * k, 16);
     var g = drag.ghost;
     g.style.width = gw + "px"; g.style.height = gh + "px";
-    g.style.left = (e.clientX - gw / 2) + "px"; g.style.top = (e.clientY - gh / 2) + "px";
-    g.classList.toggle("in", !!zoneAt(e.clientX, e.clientY, read()));
+    g.style.left = (e.clientX - gw / 2) + "px"; g.style.top = (e.clientY + (drag.dy || 0) - gh / 2) + "px";
+    g.classList.toggle("in", !!zoneAt(e.clientX, e.clientY + (drag.dy || 0), read()));
   }
 
   function startNew(cid, e) {
@@ -1123,7 +1186,7 @@
     g.style.borderColor = colorOf(c).f;
     document.body.appendChild(g);
     document.body.classList.add("dragging");
-    drag = { type: "new", cid: cid, ghost: g };
+    drag = { type: "new", cid: cid, ghost: g, dy: e.pointerType === "touch" ? -56 : 0 };
     moveGhost(e);
   }
 
@@ -1170,7 +1233,7 @@
     var p = toCm(e.clientX, e.clientY);
     if (drag.type === "new") {
       moveGhost(e);
-      var zone = zoneAt(e.clientX, e.clientY, d), c0 = cargoById(drag.cid);
+      var zone = zoneAt(e.clientX, e.clientY + (drag.dy || 0), d), c0 = cargoById(drag.cid);
       drag.preview = null; drag.guides = null;
       if (zone && zone.kind === "top") {
         var np = newPos(zone.p, c0, d);
@@ -1208,7 +1271,7 @@
     }
     if (drag.type === "new") {
       var c = cargoById(drag.cid);
-      var zn = cancel ? null : zoneAt(e.clientX, e.clientY, d);
+      var zn = cancel ? null : zoneAt(e.clientX, e.clientY + (drag.dy || 0), d);
       if (zn && zn.kind === "top") {
         var u = freeUnitFor(drag.cid);
         if (u) {
@@ -1241,6 +1304,7 @@
 
   function bindView(sv, handler) {
     sv.addEventListener("pointerdown", function (e) {
+      capture(sv, e);
       var tg = e.target;
       while (tg && tg !== sv && !(tg.getAttribute && tg.getAttribute("data-uid"))) tg = tg.parentNode;
       if (!tg || tg === sv) {
@@ -1278,12 +1342,22 @@
     cargo.push({ id: nextCid++, name: name, type: curType, l: l, w: w, h: h, q: q, limit: null });
     $("c-name").value = "";
     update(false);
+    if (window.matchMedia && window.matchMedia("(max-width: 1100px)").matches) window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
-  $("tbl").addEventListener("pointerdown", function (e) {
-    var chip = e.target.closest ? e.target.closest("[data-chip]") : null;
-    if (chip) startNew(+chip.getAttribute("data-chip"), e);
-  });
+  // на касании события должны идти в элемент, который не перерисовывается
+  function capture(el, e) { try { if (el.setPointerCapture) el.setPointerCapture(e.pointerId); } catch (err) {} }
+  function bindChips(box) {
+    box.addEventListener("pointerdown", function (e) {
+      var chip = e.target.closest ? e.target.closest("[data-chip]") : null;
+      if (!chip) return;
+      capture(box, e);
+      startNew(+chip.getAttribute("data-chip"), e);
+    });
+  }
+  bindChips($("tbl"));
+  bindChips($("tray"));
+  $("tauto").addEventListener("click", function () { $("auto").click(); });
 
   $("tbl").addEventListener("change", function (e) {
     var lid = e.target.getAttribute("data-limid"), ln = e.target.getAttribute("data-limn");
@@ -1542,7 +1616,132 @@
       if (!best || cand.sc.vol > best.sc.vol) best = cand;   // при равенстве остается меньше этажей
       if (cand.sc.n === items.length) break;
     }
+    if (best) best.items = items;
     return best;
+  }
+
+  // ---------- второй проход: верх груза заново, подряд и через стыки ----------
+  var USE_REPACK = true;
+  var REPACK_DEPTH = 2;      // сколько мест можно в высоту (пока только на пол: этаж 2)
+
+  function uniqSorted(a) {
+    return a.slice().sort(function (p, q) { return p - q; }).filter(function (v, i, arr) { return i === 0 || v !== arr[i - 1]; });
+  }
+  function rectInside(a, b) { return a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h; }
+
+  // верхние поверхности рядом стоящих мест одной высоты сливаем в одну площадку:
+  // на площадке груз можно поставить через стык между паллетами
+  function maximalRects(rects) {
+    var xs = [], ys = [];
+    rects.forEach(function (r) { xs.push(r.x, r.x + r.w); ys.push(r.y, r.y + r.h); });
+    xs = uniqSorted(xs); ys = uniqSorted(ys);
+    var nx = xs.length - 1, ny = ys.length - 1, filled = [], i, j;
+    for (j = 0; j < ny; j++) {
+      filled[j] = [];
+      for (i = 0; i < nx; i++) {
+        var cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2;
+        filled[j][i] = rects.some(function (r) { return cx > r.x && cx < r.x + r.w && cy > r.y && cy < r.y + r.h; });
+      }
+    }
+    var cands = [];
+    for (var j1 = 0; j1 < ny; j1++) {
+      var ok = [];
+      for (i = 0; i < nx; i++) ok[i] = true;
+      for (var j2 = j1; j2 < ny; j2++) {
+        var any = false;
+        for (i = 0; i < nx; i++) { ok[i] = ok[i] && filled[j2][i]; if (ok[i]) any = true; }
+        if (!any) break;
+        i = 0;
+        while (i < nx) {
+          if (!ok[i]) { i++; continue; }
+          var s = i;
+          while (i < nx && ok[i]) i++;
+          cands.push({ x: xs[s], y: ys[j1], w: xs[i] - xs[s], h: ys[j2 + 1] - ys[j1] });
+        }
+      }
+    }
+    return cands.filter(function (a, k) {
+      return !cands.some(function (b, m) { return m !== k && rectInside(a, b) && (!rectInside(b, a) || m < k); });
+    });
+  }
+
+  // Берем найденную раскладку по полу и заново расставляем все, что стоит сверху:
+  // подряд, слева направо, и на любой площадке целиком (включая стыки между паллетами).
+  // Если новый вариант разместил меньше, возвращаем прежний.
+  function repackTops(best, d) {
+    var snap = units.map(function (u) { return { u: u, x: u.x, y: u.y, z: u.z, rot: u.rot, placed: u.placed }; });
+    var oldN = best.sc.n;
+    units.forEach(function (u) { u.placed = false; u.z = 0; u.rot = false; u.out = false; });
+
+    var list = [], floorIds = {};
+    best.pl.forEach(function (p) {
+      var root = p.tower.nodes[0], dm = dimsRot(root.c, p.rot);
+      root.u.x = p.x; root.u.y = p.y; root.u.rot = p.rot; root.u.z = 0; root.u.placed = true;
+      list.push({ u: root.u, c: root.c, x: p.x, y: p.y, w: dm.l, h: dm.w, z: 0, depth: 1 });
+      floorIds[root.u.uid] = true;
+    });
+    var pool = best.items.filter(function (it) { return !floorIds[it.u.uid]; }).sort(function (a, b) {
+      return b.c.l * b.c.w - a.c.l * a.c.w || b.c.h - a.c.h || a.u.uid - b.u.uid;
+    });
+
+    for (var guard = 0; pool.length && guard < 60; guard++) {
+      var zs = {};
+      list.forEach(function (it) { if (it.depth < REPACK_DEPTH) zs[it.z + it.c.h] = true; });
+      var levels = Object.keys(zs).map(Number).sort(function (a, b) { return a - b; });
+      var progressed = false;
+
+      levels.forEach(function (z) {
+        if (!pool.length) return;
+        var tops = list.filter(function (it) { return it.depth < REPACK_DEPTH && it.z + it.c.h === z; })
+          .map(function (it) { return { x: it.x, y: it.y, w: it.w, h: it.h }; });
+        var free = tops.length ? maximalRects(tops) : [];
+        list.filter(function (it) { return it.z === z; }).forEach(function (it) { free = splitFree(free, it.x, it.y, it.w, it.h); });
+
+        for (var pi = 0; pi < pool.length;) {
+          var item = pool[pi], c = item.c, u = item.u, placedHere = false;
+          if (z + c.h > d.h || !free.length) { pi++; continue; }
+          var cand = [];
+          free.forEach(function (f) {
+            [false, true].forEach(function (r) {
+              var w = r ? c.w : c.l, h = r ? c.l : c.w;
+              if (w <= f.w && h <= f.h) cand.push({ x: f.x, y: f.y, r: r, w: w, h: h });
+            });
+          });
+          cand.sort(function (a, b) { return a.x - b.x || a.y - b.y || (a.r ? 1 : 0) - (b.r ? 1 : 0); });
+          for (var ci = 0; ci < cand.length && !placedHere; ci++) {
+            var q = cand[ci];
+            u.x = q.x; u.y = q.y; u.rot = q.r; u.z = 0; u.placed = false;
+            var r2 = placeZ(u, d);
+            if (!r2.ok || r2.z !== z) continue;
+            u.z = z;
+            if (collides(u)) continue;
+            u.placed = true;
+            var dep = 1;
+            list.forEach(function (it) {
+              if (it.z + it.c.h === z && q.x < it.x + it.w && it.x < q.x + q.w && q.y < it.y + it.h && it.y < q.y + q.h) {
+                dep = Math.max(dep, it.depth + 1);
+              }
+            });
+            list.push({ u: u, c: c, x: q.x, y: q.y, w: q.w, h: q.h, z: z, depth: dep });
+            free = splitFree(free, q.x, q.y, q.w, q.h);
+            pool.splice(pi, 1);
+            placedHere = true; progressed = true;
+          }
+          if (!placedHere) { u.placed = false; u.z = 0; u.rot = false; pi++; }
+        }
+      });
+      if (!progressed) break;
+    }
+
+    var newN = units.filter(function (u) { return u.placed; }).length;
+    if (newN < oldN) {
+      snap.forEach(function (s) { s.u.x = s.x; s.u.y = s.y; s.u.z = s.z; s.u.rot = s.rot; s.u.placed = s.placed; });
+      return null;
+    }
+    var len = 0, lv = 1, rotN = 0;
+    list.forEach(function (it) { len = Math.max(len, it.x + it.w); lv = Math.max(lv, it.depth); });
+    units.forEach(function (u) { if (u.placed && u.rot) rotN++; });
+    return { n: newN, len: len, lv: lv, rotN: rotN };
   }
 
   $("auto").addEventListener("click", function () {
@@ -1561,10 +1760,12 @@
         });
       });
     }
-    var total = units.length, n = best ? best.sc.n : 0;
+    var info = best ? best.sc : null;
+    if (best && USE_REPACK) { var rp = repackTops(best, d); if (rp) info = rp; }
+    var total = units.length, n = info ? info.n : 0;
     autoNote = total ? ("Автораскладка: " + n + " из " + total + " мест" +
-      (best ? ", занято по длине " + fmtDim(best.sc.len) + ", повернуто " + best.sc.rotN +
-        (best.sc.lv > 1 ? ", в высоту до " + best.sc.lv + " мест" : "") : "") +
+      (info ? ", занято по длине " + fmtDim(info.len) + ", повернуто " + info.rotN +
+        (info.lv > 1 ? ", в высоту до " + info.lv + " мест" : "") : "") +
       (n < total ? ". Не поместилось: " + (total - n) +
         (cargo.some(function (c) { return c.limit !== null && c.limit !== undefined; }) ? " (учтены ограничения штабелирования)" : "") : "") + ".") : "";
     update(false);
@@ -1842,6 +2043,19 @@
   }
   $("png").addEventListener("click", function () { exportAs("png"); });
   $("pdf").addEventListener("click", function () { exportAs("pdf"); });
+
+  // ---------- вкладки видов (телефон) ----------
+  document.querySelectorAll(".mtabs button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.body.setAttribute("data-mv", b.getAttribute("data-mv"));
+      document.querySelectorAll(".mtabs button").forEach(function (o) {
+        var on = o === b;
+        o.classList.toggle("on", on);
+        o.setAttribute("aria-selected", on ? "true" : "false");
+      });
+    });
+  });
+  $("trot").addEventListener("click", function () { rotateSelected(); });
 
   // ---------- переключатель см / м ----------
   function setUnit(u) {
