@@ -15,6 +15,7 @@ function runRegressionChecks(html) {
         classList: { add() {}, remove() {}, toggle() {} },
         appendChild() {}, removeChild() {}, setAttribute() {},
         addEventListener(name, handler) { handlers.set(id + ":" + name, handler); },
+        click() { handlers.get(id + ":click")?.(); },
         createSVGPoint() { return { matrixTransform() { return this; } }; },
         getScreenCTM() { return { inverse() {} }; }
       });
@@ -41,6 +42,7 @@ function runRegressionChecks(html) {
         cargoIndex = new Map(cargo.map(c => [c.id, c]));
       },
       getUnits() { return units; },
+      getCargo() { return cargo; },
       savePlan
     };
   })();`);
@@ -117,6 +119,48 @@ function runRegressionChecks(html) {
     return u.x >= 0 && u.y >= 0 && u.z >= 0 &&
       u.x + (u.rot ? c.w : c.l) <= d.l && u.y + (u.rot ? c.l : c.w) <= d.w && u.z + c.h <= d.h;
   }));
+  app.setPlan([], []);
+  handlers.get("demo:click")();
+  const demoCargo = app.getCargo();
+  const loaded = app.getUnits().filter(u => u.placed);
+  const byId = new Map(demoCargo.map(c => [c.id, c]));
+  const first = loaded.filter(u => byId.get(u.cid).stop === 1);
+  const last = loaded.filter(u => byId.get(u.cid).stop === 2);
+  check("mixed two-stop delivery loads all seven pieces", loaded.length === 7 && first.length === 2 && last.length === 5);
+  check("first delivery has a clear rear band", last.every(u => {
+    const c = byId.get(u.cid);
+    return u.x + (u.rot ? c.w : c.l) <= Math.min(...first.map(v => v.x));
+  }));
+  check("mixed delivery totals 1060 kg without overlap or stack violations",
+    loaded.reduce((sum, u) => sum + byId.get(u.cid).grams, 0) === 1060000 &&
+    !Object.keys(app.findOverlaps()).length && !Object.keys(app.limitViolators()).length);
+  app = loadApp();
+  check("route constraints and manifest survive reload", app.getUnits().filter(u => u.placed).length === 7 &&
+    element("payload").value == 1400 && element("door-w").value == 200 && element("full-support").checked);
+
+  const restricted = [cargo(1, 80, 150, 75), cargo(2, 70, 75, 110), cargo(3, 75, 75), cargo(4, 75, 75)];
+  restricted[0].grams = 70000;
+  restricted[1].grams = 50000;
+  restricted[2].grams = 50000;
+  app.setPlan(restricted, restricted.map(c => ({ ...unit(c.id), placed: false })));
+  element("len").value = 300; element("wid").value = 200; element("hei").value = 170;
+  element("door-w").value = 100; element("door-h").value = 100; element("payload").value = 100;
+  handlers.get("auto:click")();
+  const restrictedLoad = app.getUnits().filter(u => u.placed);
+  check("narrow door forces a turn and rejects overheight", restrictedLoad.length === 1 &&
+    restrictedLoad[0].cid === 1 && restrictedLoad[0].rot);
+  check("capacity rejects overweight and unknown mass", restrictedLoad.every(u => u.cid !== 3 && u.cid !== 4));
+
+  a = unit(1); b = unit(2, 0, 0, 25);
+  app.setPlan([cargo(1, 50), cargo(2)], [a, b]);
+  app.settle({ ...d, fullSupport: true });
+  check("full-support mode rejects a half-supported stack", !b.placed);
+  const differentStop = cargo(2);
+  differentStop.stop = 2;
+  a = unit(1); b = unit(2, 0, 0, 25);
+  app.setPlan([cargo(1), differentStop], [a, b]);
+  app.settle(d);
+  check("an upper item cannot block unloading its support at an earlier stop", !b.placed);
   return results;
 }
 
